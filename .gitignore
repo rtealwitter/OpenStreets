@@ -2,3 +2,4 @@ data_unwrangled/
 .ipynb_checkpoints/
 .DS_Store
 cache/
+*.pyc
