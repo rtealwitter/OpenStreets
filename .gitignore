@@ -1,4 +1,5 @@
 data_unwrangled/
+data_unwrangled_old/
 .ipynb_checkpoints/
 .DS_Store
 cache/

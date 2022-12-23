@@ -1,0 +1,8 @@
+pandas
+geopandas
+networkx
+numpy
+matplotlib
+momepy
+torch
+azureml-opendatasets
