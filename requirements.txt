@@ -6,3 +6,7 @@ matplotlib
 momepy
 torch
 azureml-opendatasets
+torch_geometric
+torch_sparse
+torch_scatter
+transformers
