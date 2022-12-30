@@ -314,7 +314,7 @@ def get_y(collisions, links, flows):
     for day in flows.keys():
         label = {objectid : 0 for objectid in links.OBJECTID}
         for crash_day, objectid in zip(collisions['CRASH DATE'], collisions['OBJECTID']):
-            crash_day_pretty = np.datetime_as_string(np.datetime64(day), unit='D')
+            crash_day_pretty = np.datetime_as_string(np.datetime64(crash_day), unit='D')
             if day == crash_day_pretty: label[objectid] += 1
         label = pd.DataFrame.from_dict(label, orient='index', columns=['crashes'])
         label.sort_index(inplace=True)
@@ -364,7 +364,7 @@ import datetime
 print(datetime.datetime.now())
 
 year = '2013'
-month = '01'
+month = '04'
 links = gpd.read_file('data/links.json')
 nodes = gpd.read_file('data/nodes.json')
 graph = get_directed_graph(links)
