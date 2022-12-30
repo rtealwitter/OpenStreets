@@ -4,3 +4,4 @@ data_unwrangled_old/
 .DS_Store
 cache/
 *.pyc
+dual_graph_stuff.ipynb
