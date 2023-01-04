@@ -5,3 +5,6 @@ data_unwrangled_old/
 cache/
 *.pyc
 dual_graph_stuff.ipynb
+planetoid
+planetoid.ipynb
+planetoid/*
