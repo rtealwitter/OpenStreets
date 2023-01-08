@@ -11,3 +11,4 @@ torch_sparse
 torch_scatter
 transformers
 scikit-learn
+torch_geometric_temporal
