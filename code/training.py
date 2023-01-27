@@ -6,19 +6,22 @@ import numpy as np
 
 
 # Data loaders
-def build_dataloaders(train_years, valid_years):
-    train_dataset = TrafficDataset(years=train_years)
-    valid_dataset = TrafficDataset(years=valid_years)
+def build_dataloaders(train_years, valid_years, train_months, valid_months):
+    train_dataset = TrafficDataset(years=train_years, months=train_months)
+    valid_dataset = TrafficDataset(years=valid_years, months=valid_months)
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
 def initialize_training(model_name='recurrent', num_epochs=2):
+    # LUCAS
     if model_name == 'rgnn':
         # I hid some hyper parameters in the model's initialization step.
         model = RecurrentGCN(node_features = 127) # Recurrent GCN so we pass temporal information
     elif model_name == 'gnn':
         model = ConvGraphNet(input_dim = 127, output_dim = 2)
+    elif model_name == 'dgcn':
+        model = DeeperGCN(num_features = 127, hidden_channels = 64, out_channels=2, num_layers = 3)
     
     num_updates = 12*num_epochs
     warmup_steps = 2
@@ -26,7 +29,7 @@ def initialize_training(model_name='recurrent', num_epochs=2):
     num_param = sum([p.numel() for p in model.parameters()])
     print(f'There are {num_param} parameters in the model.')
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.00001, weight_decay=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
     #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max = num_epochs)
     def warmup(current_step):
         if current_step < warmup_steps:
@@ -35,9 +38,8 @@ def initialize_training(model_name='recurrent', num_epochs=2):
             return max(0.0, float(num_updates - current_step) / float(max(1, num_updates - warmup_steps)))
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
-    # we reweight by the expected number of collisions / non-collisions
-    criterion = nn.CrossEntropyLoss(weight=torch.Tensor([.5038, 66.2608]))
-    return model, optimizer, scheduler, criterion
+    # we reweight by the expected number of collisions / non-collisions 
+    return model, optimizer, scheduler
 
 def verbose_output(out, y):
     if len(out.shape) == 3:
@@ -50,13 +52,16 @@ def verbose_output(out, y):
     print(classification_report(true_labels, pred_labels))
 
 def train(model_name, num_epochs, save_model=True):
-    model, optimizer, scheduler, criterion = initialize_training(model_name=model_name, num_epochs=num_epochs)
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013], valid_years=[2014])
+    model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
+    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     train_losses = []
     valid_losses = []
     for epoch in range(num_epochs):
         model.train() # turn on dropout
         for i, (X, y, edges) in enumerate(train_dataloader):
+            ratio = y.numel() / y.sum()
+            print(ratio)
+            criterion = nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
             X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
             optimizer.zero_grad()
             out = model(X, edges)
@@ -151,4 +156,4 @@ def test_adaboost(learners, alphas, valid_dataloader):
     print(pred_labels.sum().astype(int))
     print(classification_report(labels, pred_labels))
 
-train(model_name='gnn', num_epochs=10, save_model=True)
+train(model_name='rgnn', num_epochs=2, save_model=True)

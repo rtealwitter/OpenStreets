@@ -97,8 +97,8 @@ class Static:
         else: link_to_capacity[link] = int(link_to_capacity[link])
     
     # LUCAS
-    model = ConvGraphNet(input_dim=127)
-    model.load_state_dict(torch.load('saved_models/RecurrentGCN.pt'))
+    model = RecurrentGCN(node_features = 127)
+    model.load_state_dict(torch.load('saved_models/rgnn.pt'))
     model.eval()
     for p in model.parameters(): p.requires_grad = False
 
@@ -149,13 +149,15 @@ class State:
         X = get_X_day(data_constant, Static.weather, self.flows_day, self.day)
         return torch.tensor(X.values).float().unsqueeze(0)
     
-    def calculate_value(self, tradeoff = 0.9):
+    def calculate_value(self, tradeoff = 0.5):
         # get total flow
         traffic = calculate_traffic(self.remaining_links, self.flows_day)
-        total_flow = sum(traffic) * 1e-2
+        total_flow = sum(traffic) * 1e-3
         # get total probability of collision
         output = Static.model(self.node_features, self.edges).squeeze()
         total_probability = F.softmax(output, dim=1)[:,1].sum().item() # probability of removing link
+        print('traffic', total_flow)
+        print('probability', total_probability)
         return (1-tradeoff) * total_flow + tradeoff * total_probability
 
 class ReplayBuffer:
@@ -288,13 +290,13 @@ def train_qlearning(num_steps, save_model=True):
     done, score = True, 0
     for i in range(num_steps):
         if done:
-            current_state = new_state()#big_strong_components)
+            current_state = new_state(months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'])
             scores += [score]
             score = 0
     
         action = select_action(current_state, epsilon, dqn) # greedy with 1-epsilon and random with epsilon
         next_state, reward, done = take_action(current_state, action)
-        print(reward)
+        print('reward', reward)
         score += reward
         memory.store({'current_state': current_state, 'next_state': next_state, 'action': action, 'reward': reward, 'done': done})
 
@@ -350,12 +352,13 @@ def test_RL(num_trajectories):
     for param in dqn.parameters(): param.requires_grad = False
 
     scores_compare = {}
-    for method in ['traffic', 'random', 'collision', 'traffic_collision']:
+    for method in ['traffic', 'random', 'collision', 'traffic_collision', 'qlearning']:
+        print(method)
         scores_compare[method] = []
         done, score = True, 0
         while len(scores_compare[method]) < num_trajectories:
             if done:
-                current_state = new_state()
+                current_state = new_state(months=['12'])
                 scores_compare[method] += [score]
                 print(score)
                 score = 0
@@ -365,7 +368,10 @@ def test_RL(num_trajectories):
             score += reward
 
             current_state = next_state
-        print(f'Method: {method}, Median: {np.round(np.median(scores_compare[method]), 2)}, Mean: {np.round(np.mean(scores_compare[method]),2)}')
+        mean = np.round(np.mean(scores_compare[method]),2)
+        median = np.round(np.median(scores_compare[method]),2)
+        std = np.round(np.std(scores_compare[method]),2)
+        print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
         print(scores_compare[method])
     return scores_compare
 
@@ -384,6 +390,6 @@ def plot_q_values(dqn):
                 norm=colors.LogNorm(vmin=q_values.min(), vmax=q_values.max()))
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
 
-dqn = train_qlearning(100)
+dqn = train_qlearning(1000)
 plot_q_values(dqn)
-test_RL(num_trajectories=100)
+test_RL(num_trajectories=10)
