@@ -344,13 +344,7 @@ def select_action_heuristic(current_state, method, dqn=None):
     if method == 'traffic_collision': return select_traffic_collision(current_state)
     if method == 'qlearning': return select_action(current_state, 0, dqn)
 
-def test_RL(num_trajectories):
-    # LUCAS
-    dqn = ConvGraphNet(input_dim = 127)
-    dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
-    dqn.eval()
-    for param in dqn.parameters(): param.requires_grad = False
-
+def test_RL(dqn, num_trajectories):
     scores_compare = {}
     for method in ['traffic', 'random', 'collision', 'traffic_collision', 'qlearning']:
         print(method)
@@ -376,9 +370,12 @@ def test_RL(num_trajectories):
     return scores_compare
 
 def plot_q_values(dqn):
-    current_state = new_state()
-    print(len(current_state.remaining_links))
+    current_state = new_state(years=['2013', '2014', '2015'], months=['12'])
     q_values = dqn(current_state.node_features, current_state.edges).detach().squeeze().numpy()
+    indices = np.argsort(q_values)[:100]
+    link_ids = np.array(current_state.remaining_links)[indices]
+    print('Top 100 Links in Q Value:')
+    print(link_ids)
     min_q = np.min(q_values)
     if min_q <= 0:
         q_values = q_values - min_q + 1
@@ -390,6 +387,12 @@ def plot_q_values(dqn):
                 norm=colors.LogNorm(vmin=q_values.min(), vmax=q_values.max()))
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
 
-dqn = train_qlearning(1000)
+
+#dqn = train_qlearning(num_steps=10, save_model=True)
+# LUCAS
+dqn = ConvGraphNet(input_dim = 127)
+dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
+dqn.eval()
+for param in dqn.parameters(): param.requires_grad = False
 plot_q_values(dqn)
-test_RL(num_trajectories=10)
+#test_RL(dqn, num_trajectories=10)
