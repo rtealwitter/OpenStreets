@@ -35,8 +35,7 @@ def redistribute_flow(graph, source, target, flow_day, flow_link, k=5):
             current_node = path[i]
             next_node = path[i+1]
             edge = graph.edges[(current_node, next_node)]['OBJECTID']
-            if edge in flow_day:
-                flow_day[edge] += weight * flow_link
+            flow_day[edge] += weight * flow_link
     
     return flow_day, False
 
@@ -103,7 +102,8 @@ class Static:
     for p in model.parameters(): p.requires_grad = False
 
 class State:
-    def __init__(self, day, removed_links, remaining_links, flows_month):
+    def __init__(self, day, removed_links, remaining_links, flows_month, tradeoff=.5):
+        self.tradeoff = tradeoff
         self.day = day
         self.removed_links = removed_links
         self.flows_month = flows_month
@@ -149,16 +149,17 @@ class State:
         X = get_X_day(data_constant, Static.weather, self.flows_day, self.day)
         return torch.tensor(X.values).float().unsqueeze(0)
     
-    def calculate_value(self, tradeoff = 0.5):
+    def calculate_value(self):
         # get total flow
         traffic = calculate_traffic(self.remaining_links, self.flows_day)
-        total_flow = sum(traffic) * 1e-3
+        total_flow = sum(traffic) / 2335000 * 100000 # normalize from random day
         # get total probability of collision
         output = Static.model(self.node_features, self.edges).squeeze()
         total_probability = F.softmax(output, dim=1)[:,1].sum().item() # probability of removing link
+        total_probability = total_probability / 9654 * 100000 # normalize from random day
         print('traffic', total_flow)
         print('probability', total_probability)
-        return (1-tradeoff) * total_flow + tradeoff * total_probability
+        return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability
 
 class ReplayBuffer:
     def __init__(self, max_size):
@@ -183,7 +184,10 @@ class ReplayBuffer:
 
 def select_action(current_state, epsilon, dqn):
     if np.random.random() < epsilon: # explore
-        selected_action = np.random.choice(len(current_state.remaining_links))
+        if np.random.random() < 0.5:
+            selected_action = np.random.choice(len(current_state.remaining_links))
+        else:
+            selected_action = select_traffic_collision(current_state)
     else: # exploit
         q_values = dqn(current_state.node_features, current_state.edges)
         selected_action = q_values.argmax().item()
@@ -260,8 +264,8 @@ def new_state(big_strong_components=None, years = ['2013', '2014', '2015'],
 
 def train_qlearning(num_steps, save_model=True):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    hard_update, batch_size = 10, 10
-    epsilon, epsilon_min, epsilon_decay = 1, .1, 1/2000
+    update, hard_update, batch_size = 10, 100, 10
+    epsilon, epsilon_min, epsilon_decay = 1, .5, 1/20000
     gamma = 0.99
 
     memory = ReplayBuffer(max_size = 1000) 
@@ -300,7 +304,7 @@ def train_qlearning(num_steps, save_model=True):
         score += reward
         memory.store({'current_state': current_state, 'next_state': next_state, 'action': action, 'reward': reward, 'done': done})
 
-        if len(memory) > batch_size:
+        if len(memory) > batch_size and i % update == 0:
             batch = memory.sample(batch_size)
             loss = calculate_loss(batch, dqn, dqn_target, gamma, device) # calculate loss and update weights
             optimizer.zero_grad()
@@ -331,7 +335,8 @@ def select_collision(current_state):
     probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
     return torch.argmax(probabilities).item()
 
-def select_traffic_collision(current_state, tradeoff=.9):
+def select_traffic_collision(current_state):
+    tradeoff = current_state.tradeoff
     traffic = calculate_traffic(current_state.remaining_links, current_state.flows_day)
     probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
     output = torch.tensor(traffic) * (1-tradeoff) + probabilities * tradeoff
@@ -388,11 +393,11 @@ def plot_q_values(dqn):
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
 
 
-#dqn = train_qlearning(num_steps=10, save_model=True)
+dqn = train_qlearning(num_steps=40000, save_model=True)
 # LUCAS
-dqn = ConvGraphNet(input_dim = 127)
-dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
-dqn.eval()
-for param in dqn.parameters(): param.requires_grad = False
+#dqn = ConvGraphNet(input_dim = 127)
+#dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
+#dqn.eval()
+#for param in dqn.parameters(): param.requires_grad = False
 plot_q_values(dqn)
-#test_RL(dqn, num_trajectories=10)
+test_RL(dqn, num_trajectories=100)

@@ -34,16 +34,16 @@ class ConvGraphNet(torch.nn.Module):
         super(ConvGraphNet, self).__init__()
         # Input layer
         self.layers = nn.ModuleList([
-            GCNConv(input_dim, 256),
+            GCNConv(input_dim, 1024),
+            GCNConv(1024, 512),
+            GCNConv(512, 256),
             GCNConv(256, 64),
             GCNConv(64, output_dim),
         ])
 
     def forward(self, x, edge_index):
-        x = F.dropout(x)
         for layer in self.layers:
             x = F.relu(layer(x, edge_index))
-
         return x
 
 class DeeperGCN(torch.nn.Module):
