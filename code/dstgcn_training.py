@@ -1,6 +1,8 @@
 from .data import TrafficDataset, connect_taxi_to_nodes, get_flows, get_taxi_data
 import pandas as pd
 import numpy as np
+from sklearn.metrics import classification_report
+from .dstgcn import DSTGCN
 
 def dstgcn_get_X_day(data_constant, weather, flows_day, day):
     # Make a deep copy of the constant link data
@@ -81,3 +83,58 @@ class DSTGCNTrafficDataset(TrafficDataset):
                external_features.to(self.device), \
                y.to(self.device), \
                self.edges
+
+
+def verbose_output(out, y):
+    if len(out.shape) == 3:
+        pred_labels = out.argmax(axis=2).flatten().detach().numpy()
+    elif len(out.shape) == 2:
+        pred_labels = out.argmax(axis=1).flatten().detach().numpy()
+    true_labels = y.flatten().detach().numpy()
+    print(f'The model predicted {pred_labels.sum()} collisions.')
+    print(f'There were really {y.sum()} collisions.')
+    print(classification_report(true_labels, pred_labels))
+
+def train_dstgcn(num_epochs=3):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    ## MODEL ##
+    model = DSTGCN()
+
+    num_param = sum([p.numel() for p in model.parameters()])
+    print(f'There are {num_param} parameters in the model.')
+
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.001)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.5, patience=2, threshold=1e-3, min_lr=1e-6)
+
+    train_losses = []
+    valid_losses = []
+    for epoch in range(num_epochs):
+        model.train()
+        for i, (spatial_features, temporal_features, external_features, y, edges) in enumerate(train_dataloader):
+            spatial_features, temporal_features, external_features, y, edges = \
+                spatial_features.squeeze(), temporal_features.squeeze(), external_features.squeeze(), y.squeeze(), edges.squeeze()
+            ratio = y.numel() / y.sum()
+            print(ratio)
+            criterion = nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
+            optimizer.zero_grad()
+            out = model(spatial_features, temporal_features, external_features, edges)
+            loss = criterion(out.permute(0,2,1), y)
+            loss.backward()
+            optimizer.step()
+            train_losses += [loss.item()]
+            print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
+            verbose_output(out, y)
+            scheduler.step(loss)
+        model.eval() # turn off dropout
+        for i, (spatial_features, temporal_features, external_features, y, edges) in enumerate(valid_dataloader):
+            spatial_features, temporal_features, external_features, y, edges = \
+                spatial_features.squeeze(), temporal_features.squeeze(), external_features.squeeze(), y.squeeze(), edges.squeeze() 
+            with torch.no_grad():
+                out = model(spatial_features, temporal_features, external_features, edges)
+                loss = criterion(out.permute(0,2,1).squeeze(1), y)
+                valid_losses += [loss.item()]            
+            print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
+            verbose_output(out, y)
+
+    torch.save(model.state_dict(), 'saved_models/DSTGCN.pt')
