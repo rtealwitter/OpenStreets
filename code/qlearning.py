@@ -323,7 +323,7 @@ def train_qlearning(num_steps, save_model=True):
 
     print(f'Median: {np.round(np.median(scores), 2)}, Mean: {np.round(np.mean(scores),2)}')
     if save_model:
-        torch.save(dqn.state_dict(), 'saved_models/dqn.pt')
+        torch.save(dqn.state_dict(), 'saved_models/new_dqn.pt')
     return dqn
 
 

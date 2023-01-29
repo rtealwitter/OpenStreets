@@ -2,7 +2,11 @@ import torch.nn as nn
 from data import *
 from models import *
 from sklearn.metrics import classification_report
+from sklearn.utils import class_weight
 import numpy as np
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+from sklearn.preprocessing import StandardScaler
 
 
 # Data loaders
@@ -155,5 +159,89 @@ def test_adaboost(learners, alphas, valid_dataloader):
     pred_labels = combined_pred.flatten().detach().numpy()
     print(pred_labels.sum().astype(int))
     print(classification_report(labels, pred_labels))
+
+def process_for_feature_only_models():
+    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013],
+                                                           valid_years=[2013],
+                                                           train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+                                                           valid_months=['12'])
+
+    # NOTE: There's definitely a better way to convert the data
+    # into proper format...not working on that right now tho
+    X_train = []
+    Y_train = []
+    for i, (X, y, _) in enumerate(train_dataloader):
+        X_train.append(X.squeeze()), Y_train.append(y.squeeze())
+
+    X_valid = []
+    Y_valid = []
+    for i, (X, y, _) in enumerate(valid_dataloader):
+        X_valid.append(X.squeeze()), Y_valid.append(y.squeeze())
+    
+    x_train_expand = torch.cat(X_train).flatten(0,1).numpy()
+    y_train_expand = torch.cat(Y_train).flatten(0,1).numpy()
+    x_valid_expand = torch.cat(X_valid).flatten(0,1).numpy()
+    y_valid_expand = torch.cat(Y_valid).flatten(0,1).numpy()
+
+    return x_train_expand, y_train_expand, x_valid_expand, y_valid_expand 
+
+def train_xgboost():
+    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+
+    classes_weights = class_weight.compute_sample_weight(
+        class_weight='balanced',
+        y=y_train_expand
+    )
+
+    # https://www.analyseup.com/python-machine-learning/xgboost-parameter-tuning.html
+    xgboost.set_config(verbosity=2)
+
+    # create model instance
+    # bst = XGBClassifier(n_estimators=50, max_depth=6, learning_rate=0.3, objective='binary:logistic')
+    bst = XGBClassifier(n_estimators=20, max_depth=6, learning_rate=0.3, objective='binary:logistic')
+    # fit model
+    bst.fit(x_train_expand, y_train_expand, verbose=1, sample_weight=classes_weights)
+    # make predictions
+    preds = bst.predict(x_valid_expand)
+
+    print(f'The model predicted {preds.sum()} collisions.')
+    print(f'There were really {y_valid_expand.sum()} collisions.')
+    print(classification_report(y_valid_expand, preds))
+    bst.save_model('saved_models/xgb.json')
+    return bst
+
+def train_lightgbm():
+    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+
+    lgbm_model = LGBMClassifier(boosting_type='gbdt', 
+                num_leaves=2^10+1, 
+                max_depth=-1, 
+                learning_rate=0.01, 
+                n_estimators=1000, 
+                subsample_for_bin=200000, 
+                objective=None, 
+                class_weight=None, 
+                min_split_gain=0.0, 
+                min_child_weight=0.001, 
+                min_child_samples=20, 
+                subsample=1.0, 
+                subsample_freq=0, 
+                colsample_bytree=1.0, 
+                reg_alpha=0.0, 
+                reg_lambda=0.0, 
+                random_state=None, 
+                n_jobs=None, 
+                importance_type='split')
+
+    lgbm_model.fit(x_train_expand, y_train_expand, sample_weight=classes_weights)
+    preds = lgbm_model.predict(x_valid_expand)
+
+    print(f'The model predicted {preds.sum()} collisions.')
+    print(f'There were really {y_valid_expand.sum()} collisions.')
+    print(classification_report(y_valid_expand, preds))
+    lgbm_model.booster_.save_model('saved_models/lightgbm.txt')
+    #load from model:
+    #bst = lgb.Booster(model_file='mode.txt')
+    return lgbm_model
 
 train(model_name='rgnn', num_epochs=2, save_model=True)
