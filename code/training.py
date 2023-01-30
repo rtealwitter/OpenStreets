@@ -4,6 +4,7 @@ from models import *
 from sklearn.metrics import classification_report
 from sklearn.utils import class_weight
 import numpy as np
+import xgboost
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.preprocessing import StandardScaler
@@ -26,6 +27,10 @@ def initialize_training(model_name='recurrent', num_epochs=2):
         model = ConvGraphNet(input_dim = 127, output_dim = 2)
     elif model_name == 'dgcn':
         model = DeeperGCN(num_features = 127, hidden_channels = 64, out_channels=2, num_layers = 3)
+    elif model_name == 'scalable_rgnn':
+        # More hidden hyper parameters in the model's initialization step
+        # of best setting.
+        model = ScalableRecurrentGCN(node_features = 127)
     
     num_updates = 12*num_epochs
     warmup_steps = 2
@@ -33,8 +38,12 @@ def initialize_training(model_name='recurrent', num_epochs=2):
     num_param = sum([p.numel() for p in model.parameters()])
     print(f'There are {num_param} parameters in the model.')
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
-    #scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max = num_epochs)
+    
+    if 'scalable_rgnn':
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0003, weight_decay=0.0001)
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
+
     def warmup(current_step):
         if current_step < warmup_steps:
             return float(current_step / warmup_steps)
@@ -56,6 +65,7 @@ def verbose_output(out, y):
     print(classification_report(true_labels, pred_labels))
 
 def train(model_name, num_epochs, save_model=True):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
     train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     train_losses = []
@@ -66,7 +76,11 @@ def train(model_name, num_epochs, save_model=True):
             ratio = y.numel() / y.sum()
             print(ratio)
             criterion = nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
+            criterion.to(device)
             X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
+            X.to(device)
+            y.to(device)
+            edges.to(device)
             optimizer.zero_grad()
             out = model(X, edges)
             loss = criterion(out.permute(0,2,1), y)
@@ -74,7 +88,59 @@ def train(model_name, num_epochs, save_model=True):
             optimizer.step()
             train_losses += [loss.item()]
             print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
-            verbose_output(out, y)
+            verbose_output(out.cpu(), y.cpu())
+            scheduler.step()
+        model.eval() # turn off dropout
+        for X, y, edges in valid_dataloader:
+            X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
+            X.to(device)
+            y.to(device)
+            edges.to(device)        
+            with torch.no_grad():
+                out = model(X, edges)
+                loss = criterion(out.permute(0,2,1), y)
+                valid_losses += [loss.item()]            
+            print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
+            verbose_output(out.cpu(), y.cpu())
+    if save_model:
+        torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
+
+def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, return_metric_dict=True):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
+    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
+                                                           valid_years=[2013, 2014], 
+                                                           train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+                                                           valid_months=['12'])
+    train_losses = []
+    valid_losses = []
+    for epoch in range(num_epochs):
+        model.train() # turn on dropout
+        for X, y, edges in train_dataloader:
+            ratio = y.numel() / y.sum()
+            print(ratio)
+            criterion = nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
+            criterion.to(device)
+            X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
+            X.to(device)
+            y.to(device)
+            edges.to(device)
+
+            minibatch_losses = []
+            all_out = []
+            for minibatch_x, minibatch_y in zip(torch.split(X, minibatch_size), torch.split(y, minibatch_size)):
+                optimizer.zero_grad()
+                out = model(minibatch_x, edges)
+                all_out.append(out)
+                print(out.permute(0,2,1).shape)
+                print(minibatch_y)
+                loss = criterion(out.permute(0,2,1), minibatch_y)
+                loss.backward()
+                optimizer.step()
+                minibatch_losses += [loss.item()]
+            train_losses += [sum(minibatch_losses)]
+            print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
+            verbose_output(torch.cat(all_out, dim=0).cpu(), y.cpu())
             scheduler.step()
         model.eval() # turn off dropout
         for X, y, edges in valid_dataloader:
@@ -160,29 +226,41 @@ def test_adaboost(learners, alphas, valid_dataloader):
     print(pred_labels.sum().astype(int))
     print(classification_report(labels, pred_labels))
 
-def process_for_feature_only_models():
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013],
-                                                           valid_years=[2013],
-                                                           train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
-                                                           valid_months=['12'])
+x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = None, None, None, None
+def process_for_feature_only_models(set_global=True):
+    global x_train_expand 
+    global y_train_expand
+    global x_valid_expand
+    global y_valid_expand
+    if all(x is None for x in [x_train_expand, y_train_expand, x_valid_expand, y_valid_expand]):
+        train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013],
+                                                            valid_years=[2013],
+                                                            train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+                                                            valid_months=['12'])
 
-    # NOTE: There's definitely a better way to convert the data
-    # into proper format...not working on that right now tho
-    X_train = []
-    Y_train = []
-    for i, (X, y, _) in enumerate(train_dataloader):
-        X_train.append(X.squeeze()), Y_train.append(y.squeeze())
+        # NOTE: There's definitely a better way to convert the data
+        # into proper format...not working on that right now tho
+        X_train = []
+        Y_train = []
+        for i, (X, y, _) in enumerate(train_dataloader):
+            X_train.append(X.squeeze()), Y_train.append(y.squeeze())
 
-    X_valid = []
-    Y_valid = []
-    for i, (X, y, _) in enumerate(valid_dataloader):
-        X_valid.append(X.squeeze()), Y_valid.append(y.squeeze())
+        X_valid = []
+        Y_valid = []
+        for i, (X, y, _) in enumerate(valid_dataloader):
+            X_valid.append(X.squeeze()), Y_valid.append(y.squeeze())
+        
+        x_train = torch.cat(X_train).flatten(0,1).cpu().numpy()
+        y_train = torch.cat(Y_train).flatten(0,1).cpu().numpy()
+        x_valid= torch.cat(X_valid).flatten(0,1).cpu().numpy()
+        y_valid = torch.cat(Y_valid).flatten(0,1).cpu().numpy()
+
+        if set_global:
+            x_train_expand = x_train
+            y_train_expand = y_train
+            x_valid_expand = x_valid
+            y_valid_expand = y_valid 
     
-    x_train_expand = torch.cat(X_train).flatten(0,1).numpy()
-    y_train_expand = torch.cat(Y_train).flatten(0,1).numpy()
-    x_valid_expand = torch.cat(X_valid).flatten(0,1).numpy()
-    y_valid_expand = torch.cat(Y_valid).flatten(0,1).numpy()
-
     return x_train_expand, y_train_expand, x_valid_expand, y_valid_expand 
 
 def train_xgboost():
@@ -204,7 +282,7 @@ def train_xgboost():
     # make predictions
     preds = bst.predict(x_valid_expand)
 
-    print(f'The model predicted {preds.sum()} collisions.')
+    print(f'XGBoost predicted {preds.sum()} collisions.')
     print(f'There were really {y_valid_expand.sum()} collisions.')
     print(classification_report(y_valid_expand, preds))
     bst.save_model('saved_models/xgb.json')
@@ -212,6 +290,11 @@ def train_xgboost():
 
 def train_lightgbm():
     x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+    
+    classes_weights = class_weight.compute_sample_weight(
+        class_weight='balanced',
+        y=y_train_expand
+    )
 
     lgbm_model = LGBMClassifier(boosting_type='gbdt', 
                 num_leaves=2^10+1, 
@@ -231,12 +314,13 @@ def train_lightgbm():
                 reg_lambda=0.0, 
                 random_state=None, 
                 n_jobs=None, 
+                verbose=1000,
                 importance_type='split')
 
-    lgbm_model.fit(x_train_expand, y_train_expand, sample_weight=classes_weights)
+    lgbm_model.fit(x_train_expand, y_train_expand, sample_weight=classes_weights, verbose=1000)
     preds = lgbm_model.predict(x_valid_expand)
 
-    print(f'The model predicted {preds.sum()} collisions.')
+    print(f'LightGBM predicted {preds.sum()} collisions.')
     print(f'There were really {y_valid_expand.sum()} collisions.')
     print(classification_report(y_valid_expand, preds))
     lgbm_model.booster_.save_model('saved_models/lightgbm.txt')
@@ -244,4 +328,4 @@ def train_lightgbm():
     #bst = lgb.Booster(model_file='mode.txt')
     return lgbm_model
 
-train(model_name='rgnn', num_epochs=2, save_model=True)
+# train(model_name='rgnn', num_epochs=2, save_model=True)

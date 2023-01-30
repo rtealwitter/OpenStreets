@@ -1,7 +1,7 @@
+import torch
 from torch_geometric_temporal.nn.recurrent import GConvGRU
 from torch_geometric.nn import GCNConv
 from torch_geometric.nn import GCNConv
-import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch_geometric.nn import DeepGCNLayer, GENConv
@@ -78,3 +78,27 @@ class DeeperGCN(torch.nn.Module):
         x = self.final(x, edge_index)
 
         return x
+
+class ScalableRecurrentGCN(torch.nn.Module):
+    def __init__(self, node_features, output_dim=2, 
+                 hidden_dim_sequence=[1024,512,768,256,128,64,64], neighborhood_size=2):
+        super(ScalableRecurrentGCN, self).__init__()
+        self.hidden_dim_sequence = hidden_dim_sequence
+        self.layers = nn.ModuleList([GConvGRU(node_features, hidden_dim_sequence[0], neighborhood_size)])
+        num_layers = len(hidden_dim_sequence)
+        for i in range(1, num_layers):
+            if i == num_layers-1:
+                self.layers.append(GConvGRU(hidden_dim_sequence[i-1], output_dim, neighborhood_size))
+            else:
+                self.layers.append(GConvGRU(hidden_dim_sequence[i-1], hidden_dim_sequence[i], neighborhood_size))
+
+    def forward(self, graphs, edge_index):
+        hidden_states = [None] * len(self.layers)
+        predictions = []
+        for node_features in graphs:
+            hidden_states[0] = self.layers[0](node_features, edge_index, H=hidden_states[0])
+            for i in range(1, len(self.layers)):
+                hidden_states[i] = F.relu(self.layers[i](hidden_states[i-1], edge_index, H=hidden_states[i]))
+            predictions += [F.dropout(hidden_states[-1], p=0.1, training=self.training)]
+        predictions = torch.stack(predictions)
+        return predictions

@@ -1,8 +1,8 @@
-from .data import TrafficDataset, connect_taxi_to_nodes, get_flows, get_taxi_data
+from data import TrafficDataset, connect_taxi_to_nodes, get_flows, get_taxi_data
 import pandas as pd
 import numpy as np
 from sklearn.metrics import classification_report
-from .dstgcn import DSTGCN
+from dstgcn import DSTGCN
 
 def dstgcn_get_X_day(data_constant, weather, flows_day, day):
     # Make a deep copy of the constant link data
