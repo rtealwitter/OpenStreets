@@ -3,6 +3,7 @@ from models import *
 from itertools import islice
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
+import time
 
 # Helper functions for the state
 def k_shortest_paths(graph, source, target, k):
@@ -96,8 +97,8 @@ class Static:
         else: link_to_capacity[link] = int(link_to_capacity[link])
     
     # LUCAS
-    model = RecurrentGCN(node_features = 127)
-    model.load_state_dict(torch.load('saved_models/rgnn.pt'))
+    model = ScalableRecurrentGCN(node_features = 127)
+    model.load_state_dict(torch.load('saved_models/excellent_model.pt'))
     model.eval()
     for p in model.parameters(): p.requires_grad = False
 
@@ -262,7 +263,7 @@ def new_state(big_strong_components=None, years = ['2013', '2014', '2015'],
     flows_month = subset_flows(flows_month, remaining_links)
     return State(day, [], remaining_links, flows_month)
 
-def train_qlearning(num_steps, save_model=True):
+def train_qlearning(num_steps, save_model=True, time_steps=False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     update, hard_update, batch_size = 10, 100, 10
     epsilon, epsilon_min, epsilon_decay = 1, .5, 1/20000
@@ -293,6 +294,8 @@ def train_qlearning(num_steps, save_model=True):
     scores, losses = [], []
     done, score = True, 0
     for i in range(num_steps):
+        if time_steps:
+            start = time.time()
         if done:
             current_state = new_state(months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'])
             scores += [score]
@@ -320,6 +323,9 @@ def train_qlearning(num_steps, save_model=True):
                 dqn_target.load_state_dict(dqn.state_dict())
 
         current_state = next_state
+        if time_steps:
+            print(f'Time: {time.time() - start}')
+            print()
 
     print(f'Median: {np.round(np.median(scores), 2)}, Mean: {np.round(np.mean(scores),2)}')
     if save_model:
@@ -393,7 +399,7 @@ def plot_q_values(dqn):
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
 
 
-dqn = train_qlearning(num_steps=40000, save_model=True)
+dqn = train_qlearning(num_steps=500, save_model=True, time_steps=True)
 # LUCAS
 #dqn = ConvGraphNet(input_dim = 127)
 #dqn.load_state_dict(torch.load('saved_models/dqn.pt'))

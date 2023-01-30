@@ -22,15 +22,15 @@ def initialize_training(model_name='recurrent', num_epochs=2):
     # LUCAS
     if model_name == 'rgnn':
         # I hid some hyper parameters in the model's initialization step.
-        model = RecurrentGCN(node_features = 127) # Recurrent GCN so we pass temporal information
+        model = RecurrentGCN(node_features = 127).to(device) # Recurrent GCN so we pass temporal information
     elif model_name == 'gnn':
-        model = ConvGraphNet(input_dim = 127, output_dim = 2)
+        model = ConvGraphNet(input_dim = 127, output_dim = 2).to(device)
     elif model_name == 'dgcn':
-        model = DeeperGCN(num_features = 127, hidden_channels = 64, out_channels=2, num_layers = 3)
+        model = DeeperGCN(num_features = 127, hidden_channels = 64, out_channels=2, num_layers = 3).to(device)
     elif model_name == 'scalable_rgnn':
         # More hidden hyper parameters in the model's initialization step
         # of best setting.
-        model = ScalableRecurrentGCN(node_features = 127)
+        model = ScalableRecurrentGCN(node_features = 127).to(device)
     
     num_updates = 12*num_epochs
     warmup_steps = 2
