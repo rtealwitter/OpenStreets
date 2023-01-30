@@ -339,7 +339,11 @@ class TrafficDataset(Dataset):
         self.links = gpd.read_file('data/links.json')        
         self.nodes = gpd.read_file('data/nodes.json')        
         self.graph = get_directed_graph(self.links)
-        self.collisions = gpd.read_file('data/collisions_2013.json')
+        list_of_year_collisions = []
+        for year in years:
+            list_of_year_collisions.append(gpd.read_file(f'data/collisions_{year}.json'))
+        self.collisions = gpd.GeoDataFrame( pd.concat( list_of_year_collisions, ignore_index=True) )
+        print(len(self.collisions))
         # If we change years, different weather features will be returned
         # because we eliminate columns with missing values
         self.weather = preprocess_weather(years)
