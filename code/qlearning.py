@@ -391,7 +391,10 @@ def test_RL(dqn, num_steps):
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
         print(reward_compare[method])
     for method in methods:
-        print(f'Method: {method}, Median: {np.round(np.median(reward_compare[method]),2)}, Mean: {np.round(np.mean(reward_compare[method]),2)}')
+        mean = np.round(np.mean(reward_compare[method]),2)
+        median = np.round(np.median(reward_compare[method]),2)
+        std = np.round(np.std(reward_compare[method]),2)
+        print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
     return reward_compare
 
 def plot_q_values(dqn):
@@ -422,3 +425,9 @@ dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
 plot_q_values(dqn)
 test_RL(dqn, num_steps=500)
+## Output
+## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
+## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33
+## Method: collision, Median: -0.86, Mean: -1.84, Std: 5.85
+## Method: traffic, Median: -20.21, Mean: -11.83, Std: 18.28
+## Method: random, Median: 0.72, Mean: -0.86, Std: 4.14
