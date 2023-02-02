@@ -26,7 +26,7 @@ We made one (very pretty) figure of Q values in Manhattan according to our deep 
 
 • [NYC Collisions](https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95)
 
-• [NYC Infrastructure](https://data.cityofnewyork.us/City-Government/NYC-Street-Centerline-CSCL-/exjm-f27b)
+• [NYC Lion](https://www.nyc.gov/site/planning/data-maps/open-data/dwn-lion.page)
 
 • [NOAA Daily Weather Data](https://www.ncdc.noaa.gov/cdo-web/datatools)
 
