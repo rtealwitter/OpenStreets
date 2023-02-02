@@ -11,6 +11,7 @@ from sklearn import preprocessing
 from torch.utils.data import DataLoader, Dataset
 import torch
 import os.path
+import momepy
 
 
 # Only need to run this function once
@@ -338,7 +339,9 @@ class TrafficDataset(Dataset):
         # Should take under a minute to load
         self.links = gpd.read_file('data/links.json')        
         self.nodes = gpd.read_file('data/nodes.json')        
-        self.graph = get_directed_graph(self.links)
+        #self.graph = get_directed_graph(self.links)
+        #TODO: Use momepy to get directed graph instead of trusting the data
+        self.graph = momepy.gdf_to_nx(self.links, directed=True)
         list_of_year_collisions = []
         for year in years:
             list_of_year_collisions.append(gpd.read_file(f'data/collisions_{year}.json'))
