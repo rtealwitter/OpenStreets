@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 from sklearn.metrics import classification_report
 from dstgcn import DSTGCN
+import torch
+from data import *
+from models import *
 
 def dstgcn_get_X_day(data_constant, weather, flows_day, day):
     # Make a deep copy of the constant link data
@@ -84,7 +87,6 @@ class DSTGCNTrafficDataset(TrafficDataset):
                y.to(self.device), \
                self.edges
 
-
 def verbose_output(out, y):
     if len(out.shape) == 3:
         pred_labels = out.argmax(axis=2).flatten().detach().numpy()
@@ -94,12 +96,20 @@ def verbose_output(out, y):
     print(f'The model predicted {pred_labels.sum()} collisions.')
     print(f'There were really {y.sum()} collisions.')
     print(classification_report(true_labels, pred_labels))
+    return classification_report(true_labels, pred_labels, output_dict=True)
 
-def train_dstgcn(num_epochs=3):
+def build_dataloaders(train_years, valid_years, train_months, valid_months):
+    train_dataset = DSTGCNTrafficDataset(years=train_years, months=train_months)
+    valid_dataset = DSTGCNTrafficDataset(years=valid_years, months=valid_months)
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+    valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
+    return train_dataloader, valid_dataloader
+
+def train_dstgcn(num_epochs=3,return_class_report_dict=True):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     ## MODEL ##
-    model = DSTGCN()
+    model = DSTGCN().to(device)
 
     num_param = sum([p.numel() for p in model.parameters()])
     print(f'There are {num_param} parameters in the model.')
@@ -109,14 +119,18 @@ def train_dstgcn(num_epochs=3):
 
     train_losses = []
     valid_losses = []
+    report_dict = None
+    best_recall = -1
     for epoch in range(num_epochs):
         model.train()
         for i, (spatial_features, temporal_features, external_features, y, edges) in enumerate(train_dataloader):
             spatial_features, temporal_features, external_features, y, edges = \
                 spatial_features.squeeze(), temporal_features.squeeze(), external_features.squeeze(), y.squeeze(), edges.squeeze()
+            spatial_features.to(device), temporal_features.to(device), external_features.to(device), y.to(device), edges.to(device) 
             ratio = y.numel() / y.sum()
             print(ratio)
             criterion = nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
+            criterion.to(device)
             optimizer.zero_grad()
             out = model(spatial_features, temporal_features, external_features, edges)
             loss = criterion(out.permute(0,2,1), y)
@@ -124,17 +138,25 @@ def train_dstgcn(num_epochs=3):
             optimizer.step()
             train_losses += [loss.item()]
             print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
-            verbose_output(out, y)
+            verbose_output(out.cpu(), y.cpu())
             scheduler.step(loss)
         model.eval() # turn off dropout
         for i, (spatial_features, temporal_features, external_features, y, edges) in enumerate(valid_dataloader):
             spatial_features, temporal_features, external_features, y, edges = \
                 spatial_features.squeeze(), temporal_features.squeeze(), external_features.squeeze(), y.squeeze(), edges.squeeze() 
+            spatial_features.to(device), temporal_features.to(device), external_features.to(device), y.to(device), edges.to(device) 
             with torch.no_grad():
                 out = model(spatial_features, temporal_features, external_features, edges)
                 loss = criterion(out.permute(0,2,1).squeeze(1), y)
                 valid_losses += [loss.item()]            
             print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
-            verbose_output(out, y)
-
+            metrics = verbose_output(out.cpu(), y.cpu())
+            if metrics['macro avg']['recall'] > best_recall:
+                best_recall = metrics['macro avg']['recall']
+                report_dict = metrics
+                torch.save(model.state_dict(), f'saved_models/best_DSTGCN.pt')
+    
     torch.save(model.state_dict(), 'saved_models/DSTGCN.pt')
+    if return_class_report_dict:
+        return report_dict
+    

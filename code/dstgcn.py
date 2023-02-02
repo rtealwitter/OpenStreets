@@ -124,8 +124,6 @@ class StackedSTBlocks(nn.ModuleList):
         h, g = input
         for module in self:
             temp = module(h, g)
-            print(h.shape)
-            print(temp.transpose(-2, -1).shape)
             h = torch.cat((h, temp.transpose(-2, -1)), dim=2)
 
         return h
@@ -169,9 +167,9 @@ class DSTGCN(nn.Module):
         :param external_features: shape [batch_size, F_3]
         :return: a tensor, shape [batch_size], with the prediction results for each graphs
         """
-        print(spatial_features.shape)
-        print(temporal_features.shape)
-        print(external_features.shape)
+        # print(spatial_features.shape)
+        # print(temporal_features.shape)
+        # print(external_features.shape)
         s_out = self.spatial_gcn(self.spatial_embedding(spatial_features), edges)
 
         

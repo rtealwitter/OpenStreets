@@ -9,6 +9,8 @@ planetoid
 planetoid.ipynb
 planetoid/*
 loaded_data/
+dstgcn_loaded_data/
 *.err
 *.out
 saved_models/excellent_model.pt
+all_metrics_saved

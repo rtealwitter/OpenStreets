@@ -1,10 +1,10 @@
 import torch
 from torch_geometric_temporal.nn.recurrent import GConvGRU
-from torch_geometric.nn import GCNConv
+
 from torch_geometric.nn import GCNConv
 import torch.nn.functional as F
 import torch.nn as nn
-from torch_geometric.nn import DeepGCNLayer, GENConv
+from torch_geometric.nn import DeepGCNLayer, GENConv, ChebConv
 
 # adapted from https://gist.github.com/sparticlesteve/62854712aed7a7e46b70efaec0c64e4f
 class RecurrentGCN(torch.nn.Module):
@@ -34,16 +34,15 @@ class ConvGraphNet(torch.nn.Module):
         super(ConvGraphNet, self).__init__()
         # Input layer
         self.layers = nn.ModuleList([
-            GCNConv(input_dim, 1024),
-            GCNConv(1024, 512),
+            GCNConv(input_dim, 512),
             GCNConv(512, 256),
-            GCNConv(256, 64),
+            GCNConv(256, 128),
+            GCNConv(128, 64),
             GCNConv(64, output_dim),
         ])
-
     def forward(self, x, edge_index):
         for layer in self.layers:
-            x = F.relu(layer(x, edge_index))
+            x = F.dropout(F.relu(layer(x, edge_index)), p=0.1, training=self.training)
         return x
 
 class DeeperGCN(torch.nn.Module):

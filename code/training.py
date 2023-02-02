@@ -8,7 +8,9 @@ import xgboost
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
 
 # Data loaders
 def build_dataloaders(train_years, valid_years, train_months, valid_months):
@@ -19,18 +21,25 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     return train_dataloader, valid_dataloader
 
 def initialize_training(model_name='recurrent', num_epochs=2):
-    # LUCAS
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if model_name == 'rgnn':
         # I hid some hyper parameters in the model's initialization step.
         model = RecurrentGCN(node_features = 127).to(device) # Recurrent GCN so we pass temporal information
     elif model_name == 'gnn':
-        model = ConvGraphNet(input_dim = 127, output_dim = 2).to(device)
+        model = ConvGraphNet(input_dim = 127, output_dim = 1).to(device)
     elif model_name == 'dgcn':
         model = DeeperGCN(num_features = 127, hidden_channels = 64, out_channels=2, num_layers = 3).to(device)
     elif model_name == 'scalable_rgnn':
         # More hidden hyper parameters in the model's initialization step
         # of best setting.
-        model = ScalableRecurrentGCN(node_features = 127).to(device)
+        model = ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[1024,512,768,256,128,64,64]).to(device)
+    elif model_name == 'lite_scalable_rgnn':
+        # More hidden hyper parameters in the model's initialization step
+        # of best setting.
+        model = ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[512,256,128,64,64]).to(device)
+        #[256,128,64,32,32] .72
+        #[384,192,96,48,48] .74
+        #[512,256,128,64,64] .76
     
     num_updates = 12*num_epochs
     warmup_steps = 2
@@ -38,19 +47,23 @@ def initialize_training(model_name='recurrent', num_epochs=2):
     num_param = sum([p.numel() for p in model.parameters()])
     print(f'There are {num_param} parameters in the model.')
 
-    
-    if 'scalable_rgnn':
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.0003, weight_decay=0.0001)
-    else:
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
-
     def warmup(current_step):
         if current_step < warmup_steps:
             return float(current_step / warmup_steps)
         else:                                 
             return max(0.0, float(num_updates - current_step) / float(max(1, num_updates - warmup_steps)))
-
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
+    
+    if model_name == 'scalable_rgnn' or 'lite_scalable_rgnn':
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.0003, weight_decay=0.0001)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
+    elif model_name == 'gnn':
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.5, patience=2, threshold=1e-3, min_lr=1e-6)
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.001)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
+    
     # we reweight by the expected number of collisions / non-collisions 
     return model, optimizer, scheduler
 
@@ -63,13 +76,16 @@ def verbose_output(out, y):
     print(f'The model predicted {pred_labels.sum()} collisions.')
     print(f'There were really {y.sum()} collisions.')
     print(classification_report(true_labels, pred_labels))
+    return classification_report(true_labels, pred_labels, output_dict=True)
 
-def train(model_name, num_epochs, save_model=True):
+def train(model_name, num_epochs, save_model=True, return_class_report_dict=True):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
     train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     train_losses = []
     valid_losses = []
+    best_recall = -1
+    report_dict = None
     for epoch in range(num_epochs):
         model.train() # turn on dropout
         for i, (X, y, edges) in enumerate(train_dataloader):
@@ -89,7 +105,10 @@ def train(model_name, num_epochs, save_model=True):
             train_losses += [loss.item()]
             print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
             verbose_output(out.cpu(), y.cpu())
-            scheduler.step()
+            if model_name == 'gnn':
+                scheduler.step(loss)
+            else:   
+                scheduler.step()
         model.eval() # turn off dropout
         for X, y, edges in valid_dataloader:
             X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
@@ -101,11 +120,18 @@ def train(model_name, num_epochs, save_model=True):
                 loss = criterion(out.permute(0,2,1), y)
                 valid_losses += [loss.item()]            
             print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
-            verbose_output(out.cpu(), y.cpu())
+            metrics = verbose_output(out.cpu(), y.cpu())
+        if metrics['macro avg']['recall'] > best_recall:
+            best_recall = metrics['macro avg']['recall']
+            report_dict = metrics
+            torch.save(model.state_dict(), f'saved_models/best_{model_name}.pt')
     if save_model:
         torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
 
-def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, return_metric_dict=True):
+    if return_class_report_dict:
+        return report_dict
+
+def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, return_class_report_dict=True):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
     train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
@@ -114,9 +140,11 @@ def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, r
                                                            valid_months=['12'])
     train_losses = []
     valid_losses = []
+    best_recall = -1
+    report_dict = None
     for epoch in range(num_epochs):
         model.train() # turn on dropout
-        for X, y, edges in train_dataloader:
+        for i, (X, y, edges) in enumerate(train_dataloader):
             ratio = y.numel() / y.sum()
             print(ratio)
             criterion = nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
@@ -132,8 +160,6 @@ def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, r
                 optimizer.zero_grad()
                 out = model(minibatch_x, edges)
                 all_out.append(out)
-                print(out.permute(0,2,1).shape)
-                print(minibatch_y)
                 loss = criterion(out.permute(0,2,1), minibatch_y)
                 loss.backward()
                 optimizer.step()
@@ -141,7 +167,10 @@ def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, r
             train_losses += [sum(minibatch_losses)]
             print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
             verbose_output(torch.cat(all_out, dim=0).cpu(), y.cpu())
-            scheduler.step()
+            if model_name == 'gnn':
+                scheduler.step(loss)
+            else:   
+                scheduler.step()
         model.eval() # turn off dropout
         for X, y, edges in valid_dataloader:
             X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()        
@@ -150,9 +179,76 @@ def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, r
                 loss = criterion(out.permute(0,2,1), y)
                 valid_losses += [loss.item()]            
             print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
-            verbose_output(out, y)
+            metrics = verbose_output(out.cpu(), y.cpu())
+        if metrics['macro avg']['recall'] > best_recall:
+            best_recall = metrics['macro avg']['recall']
+            report_dict = metrics
+            torch.save(model.state_dict(), f'saved_models/best_{model_name}.pt')
     if save_model:
         torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
+    
+    if return_class_report_dict:
+        return report_dict
+
+def train_bce_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, return_class_report_dict=True):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
+    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
+                                                           valid_years=[2013, 2014], 
+                                                           train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+                                                           valid_months=['12'])
+    train_losses = []
+    valid_losses = []
+    best_recall = -1
+    report_dict = None
+    for epoch in range(num_epochs):
+        model.train() # turn on dropout
+        for i, (X, y, edges) in enumerate(train_dataloader):
+            ratio = y.numel() / y.sum()
+            print(ratio)
+            criterion = nn.BCEWithLogitsLoss(pos_weight=torch.Tensor([ratio+.2]))
+            criterion.to(device)
+            X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
+            X.to(device)
+            y.to(device)
+            edges.to(device)
+
+            minibatch_losses = []
+            all_out = []
+            for minibatch_x, minibatch_y in zip(torch.split(X, minibatch_size), torch.split(y, minibatch_size)):
+                optimizer.zero_grad()
+                out = model(minibatch_x, edges)
+                all_out.append(out)
+                loss = criterion(out.permute(0,2,1).squeeze(1), minibatch_y.float())
+                loss.backward()
+                optimizer.step()
+                minibatch_losses += [loss.item()]
+            train_losses += [sum(minibatch_losses)]
+            print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
+            verbose_output(torch.cat(all_out, dim=0).cpu(), y.cpu())
+            if model_name == 'gnn':
+                scheduler.step(loss)
+            else:   
+                scheduler.step()
+        model.eval() # turn off dropout
+        for X, y, edges in valid_dataloader:
+            X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()        
+            with torch.no_grad():
+                out = model(X, edges)
+                loss = criterion(out.permute(0,2,1).squeeze(1), y.float())
+                valid_losses += [loss.item()]            
+            print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
+            metrics = verbose_output(out.cpu(), y.cpu())
+        if metrics['macro avg']['recall'] > best_recall:
+            best_recall = metrics['macro avg']['recall']
+            report_dict = metrics
+            torch.save(model.state_dict(), f'saved_models/best_{model_name}.pt')
+    if save_model:
+        torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
+    
+    if return_class_report_dict:
+        return report_dict
+
 
 def train_adaboost(num_epochs=5, num_learners=30, verbose=True):
     train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013], valid_years=[2014])
@@ -233,13 +329,11 @@ def process_for_feature_only_models(set_global=True):
     global x_valid_expand
     global y_valid_expand
     if all(x is None for x in [x_train_expand, y_train_expand, x_valid_expand, y_valid_expand]):
-        train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013],
-                                                            valid_years=[2013],
+        train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
+                                                            valid_years=[2013, 2014],
                                                             train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
                                                             valid_months=['12'])
 
-        # NOTE: There's definitely a better way to convert the data
-        # into proper format...not working on that right now tho
         X_train = []
         Y_train = []
         for i, (X, y, _) in enumerate(train_dataloader):
@@ -263,7 +357,7 @@ def process_for_feature_only_models(set_global=True):
     
     return x_train_expand, y_train_expand, x_valid_expand, y_valid_expand 
 
-def train_xgboost():
+def train_xgboost(return_class_report_dict=True):
     x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
 
     classes_weights = class_weight.compute_sample_weight(
@@ -271,11 +365,9 @@ def train_xgboost():
         y=y_train_expand
     )
 
-    # https://www.analyseup.com/python-machine-learning/xgboost-parameter-tuning.html
     xgboost.set_config(verbosity=2)
 
     # create model instance
-    # bst = XGBClassifier(n_estimators=50, max_depth=6, learning_rate=0.3, objective='binary:logistic')
     bst = XGBClassifier(n_estimators=20, max_depth=6, learning_rate=0.3, objective='binary:logistic')
     # fit model
     bst.fit(x_train_expand, y_train_expand, verbose=1, sample_weight=classes_weights)
@@ -286,9 +378,11 @@ def train_xgboost():
     print(f'There were really {y_valid_expand.sum()} collisions.')
     print(classification_report(y_valid_expand, preds))
     bst.save_model('saved_models/xgb.json')
+    if return_class_report_dict:
+        return classification_report(y_valid_expand, preds, output_dict=True)
     return bst
 
-def train_lightgbm():
+def train_lightgbm(return_class_report_dict=True):
     x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
     
     classes_weights = class_weight.compute_sample_weight(
@@ -324,8 +418,25 @@ def train_lightgbm():
     print(f'There were really {y_valid_expand.sum()} collisions.')
     print(classification_report(y_valid_expand, preds))
     lgbm_model.booster_.save_model('saved_models/lightgbm.txt')
-    #load from model:
-    #bst = lgb.Booster(model_file='mode.txt')
+
+    if return_class_report_dict:
+        return classification_report(y_valid_expand, preds, output_dict=True)
     return lgbm_model
 
-# train(model_name='rgnn', num_epochs=2, save_model=True)
+def train_gaussian_nb(return_class_report_dict=True):
+    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+    
+    # clf = RandomForestClassifier(n_estimators=1000,
+    #                              verbose=3,
+    #                              n_jobs=-1,
+    #                              class_weight='balanced_subsample')
+    clf = GaussianNB()
+                                 
+    clf.fit(x_train_expand, y_train_expand)
+    preds = clf.predict(x_valid_expand)
+    print(f'GNB predicted {preds.sum()} collisions.')
+    print(f'There were really {y_valid_expand.sum()} collisions.')
+    print(classification_report(y_valid_expand, preds))
+
+    if return_class_report_dict:
+        return classification_report(y_valid_expand, preds, output_dict=True)
