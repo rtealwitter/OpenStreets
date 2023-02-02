@@ -1,5 +1,6 @@
-## Recurrent Graph Neural Networks and Deep Q Learning
-for Reducing Traffic and Collisions in Road Networks
+## Purpose
+
+This is the repository accompanying the paper titled "Recurrent Graph Neural Networks and Deep Q Learning for Reducing Traffic and Collisions in Road Networks."
 
 ### Code
 
@@ -11,7 +12,7 @@ The data sources we use (listed below) tend to be quite large. We preprocessed a
 
 ### Flows
 
-The taxi data set is particularly large. We load each individually and infer routes using Dijkstra's weighted shortest path algorithm. The saved flows appear in the `flows` folder.
+The taxi data set is particularly large. We load each individually and infer routes using Dijkstra's weighted shortest path algorithm. Then the total traffic on edge edge in the road network is saved to the `flows` folder.
 
 ### Saved Models
 
