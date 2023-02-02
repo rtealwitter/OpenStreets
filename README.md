@@ -1,3 +1,14 @@
+## Recurrent Graph Neural Networks and Deep Q Learning
+for Reducing Traffic and Collisions in Road Networks
+
+### Code
+
+All code for the paper appears in the `code` folder.
+
+### Data
+
+The data sources we use (listed below) tend to be quite large. We preprocessed a bunch of them and saved them in the `data` folder.
+
 ### Data Sources
 
 • [NYC Collisions](https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95)
@@ -5,8 +16,6 @@
 • [NYC Infrastructure](https://data.cityofnewyork.us/City-Government/NYC-Street-Centerline-CSCL-/exjm-f27b)
 
 • [NOAA Daily Weather Data](https://www.ncdc.noaa.gov/cdo-web/datatools)
-
-• [Citibike Data](https://s3.amazonaws.com/tripdata/index.html)
 
 • [NYC Taxi Data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
 
