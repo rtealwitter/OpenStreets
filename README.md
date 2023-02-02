@@ -13,6 +13,14 @@ The data sources we use (listed below) tend to be quite large. We preprocessed a
 
 The taxi data set is particularly large. We load each individually and infer routes using Dijkstra's weighted shortest path algorithm. The saved flows appear in the `flows` folder.
 
+### Saved Models
+
+Many of our models took substantial resources to train. We generally saved their weights in the `saved_models` folder.
+
+### Figures
+
+We made one (very pretty) figure of Q values in Manhattan according to our deep Q GNN. You should check it out!
+
 ### Data Sources
 
 • [NYC Collisions](https://data.cityofnewyork.us/Public-Safety/Motor-Vehicle-Collisions-Crashes/h9gi-nx95)
