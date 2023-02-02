@@ -1,9 +1,19 @@
-from data import *
-from models import *
+import data
+import models
 from itertools import islice
 import matplotlib.colors as colors
 import matplotlib.pyplot as plt
 import time
+import networkx as nx
+import geopandas as gpd
+import pickle
+import torch
+import numpy as np
+import torch.nn.functional as F
+import pandas as pd
+import copy
+import momepy
+import math
 
 # Helper functions for the state
 def k_shortest_paths(graph, source, target, k):
@@ -41,25 +51,21 @@ def redistribute_flow(graph, source, target, flow_day, flow_link, k=5):
     return flow_day, False
 
 def remove_one_link(remove_this_link, flow_day, graph, k=5):
-    node1 = Static.links[Static.links['OBJECTID'] == remove_this_link]['NodeIDFrom'].values[0]
-    node2 = Static.links[Static.links['OBJECTID'] == remove_this_link]['NodeIDTo'].values[0]
-
     # done if no flow in either direction or no path without this edge
     no_path = False
-    no_flow = True
+    edges = Static.links_to_edges[remove_this_link] 
+    flow_link = flow_day['increasing_order'][remove_this_link] + flow_day['decreasing_order'][remove_this_link]
+    no_flow = flow_link == 0
+    for u,v in edges:
+        if graph.has_edge(u,v):
+            graph.remove_edge(u,v)
+            for order in ['increasing_order', 'decreasing_order']:
+                flow_day_new, no_path_now = redistribute_flow(graph, u,v, flow_day[order], flow_link, k=k)
+                flow_day[order][remove_this_link] = flow_day_new
+                no_path = no_path or no_path_now
 
-    for source, target in [(node1, node2), (node2, node1)]:
-        # Calculate flow on link
-        order = 'increasing_order' if source < target else 'decreasing_order'
-        flow_link = flow_day[order][remove_this_link]
-        if flow_link > 0: no_flow = False
-        # Update flow
-        if graph.has_edge(source, target) and flow_link != 0:
-            graph.remove_edge(source, target)
-            flow_day_new, no_path_now = redistribute_flow(graph, source, target, flow_day[order], flow_link)
-            no_path = no_path or no_path_now
-            flow_day[order] = flow_day_new
-
+    if no_path: print('no path!')
+    if no_flow: print('no flow!')
     return flow_day, graph, no_path or no_flow
 
 def calculate_traffic(remaining_links, flows_day):
@@ -82,23 +88,33 @@ def calculate_traffic(remaining_links, flows_day):
 
 class Static:
     # Things we only need to load once
-    years = ['2013', '2014', '2015', '2016']
-    links = gpd.read_file('data/links.json')        
-    graph = get_directed_graph(links)
-    collisions = gpd.read_file('data/collisions_2013.json')
-    weather = preprocess_weather(years)
-    data_constant = prepare_links(links)
+    years = ['2013', '2014', '2015']
+    links = gpd.read_file('data/links.json')
+    graph = momepy.gdf_to_nx(links, directed=True)
+    links_to_edges = {}
+    for u,v,_ in graph.edges:
+        edges = graph.get_edge_data(u,v)
+        for key in edges:
+            edge = edges[key]
+            if edge['OBJECTID'] not in links_to_edges:
+                links_to_edges[edge['OBJECTID']] = []
+            links_to_edges[edge['OBJECTID']] += [(u,v)]
+    graph = nx.Graph(graph) # convert from multigraph to graph
+    weather = data.preprocess_weather(years)
+    data_constant = data.prepare_links(links)
     dual_graph = pickle.load(open('data/dual_graph.pkl', 'rb'))
     # links and capacity
     link_to_capacity = dict(zip(links['OBJECTID'], links['Number_Tra']))
     link_to_length = dict(zip(links['OBJECTID'], links['SHAPE_Leng']))
     for link in link_to_capacity:
         if link_to_capacity[link] == None: link_to_capacity[link] = 1
+        elif math.isnan(float(link_to_capacity[link])): link_to_capacity[link] = 1
         else: link_to_capacity[link] = int(link_to_capacity[link])
     
     # LUCAS
-    model = ScalableRecurrentGCN(node_features = 127)
-    model.load_state_dict(torch.load('saved_models/excellent_model.pt'))
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[256,128,64,32,32]).to(device)
+    model.load_state_dict(torch.load('saved_models/best_scalable_rgnn_256.pt', map_location=device))
     model.eval()
     for p in model.parameters(): p.requires_grad = False
 
@@ -117,11 +133,7 @@ class State:
 
     def remove_links_from_flows(self):
         # Subset graph to nodes connected to remaining links and removed links
-        subsetted = Static.links[Static.links['OBJECTID'].isin(self.remaining_links + self.removed_links)]
-        nodes_to = subsetted['NodeIDTo']
-        nodes_from  = subsetted['NodeIDFrom']
-        nodes_unique = np.unique([nodes_to, nodes_from])
-        graph = Static.graph.subgraph(nodes_unique).copy()
+        graph = Static.graph.copy()
         flow_day = self.flows_month[str(self.day)]
         is_done = False
         for remove_this_link in self.removed_links:
@@ -147,17 +159,17 @@ class State:
 
     def remove_links_from_node_features(self):
         data_constant = Static.data_constant[Static.data_constant['OBJECTID'].isin(self.remaining_links)]
-        X = get_X_day(data_constant, Static.weather, self.flows_day, self.day)
+        X = data.get_X_day(data_constant, Static.weather, self.flows_day, self.day)
         return torch.tensor(X.values).float().unsqueeze(0)
     
     def calculate_value(self):
         # get total flow
         traffic = calculate_traffic(self.remaining_links, self.flows_day)
-        total_flow = sum(traffic) / 2335000 * 100000 # normalize from random day
+        total_flow = sum(traffic) / 2335000 * 1000 # normalize from random day
         # get total probability of collision
         output = Static.model(self.node_features, self.edges).squeeze()
         total_probability = F.softmax(output, dim=1)[:,1].sum().item() # probability of removing link
-        total_probability = total_probability / 9654 * 100000 # normalize from random day
+        total_probability = total_probability / 9654 * 1000 # normalize from random day
         print('traffic', total_flow)
         print('probability', total_probability)
         return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability
@@ -185,13 +197,13 @@ class ReplayBuffer:
 
 def select_action(current_state, epsilon, dqn):
     if np.random.random() < epsilon: # explore
-        if np.random.random() < 0.5:
-            selected_action = np.random.choice(len(current_state.remaining_links))
-        else:
-            selected_action = select_traffic_collision(current_state)
+        selected_action = np.random.choice(len(current_state.remaining_links))
     else: # exploit
         q_values = dqn(current_state.node_features, current_state.edges)
         selected_action = q_values.argmax().item()
+        print('max', q_values.max())
+        print('min', q_values.min())
+        print('selected_action:', selected_action)
     return selected_action 
 
 def take_action(current_state, action):
@@ -199,6 +211,8 @@ def take_action(current_state, action):
     current_day = pd.DatetimeIndex([current_state.day])[0]
     next_day = current_day + pd.DateOffset(days=1)
     is_done = next_day.month != current_day.month
+    # Make sure don't go past 2015-12-31 because strange formatting in 2016 weather
+    is_done = is_done or (current_day.day == 30 and current_day.year == 2015 and current_day.month == 12)
     next_day_str = next_day.strftime('%Y-%m-%d')
     # Convert index to action
     action = sorted(current_state.remaining_links)[action]
@@ -214,7 +228,7 @@ def take_action(current_state, action):
     # Check if done because of new month or some other way
     is_done = is_done or next_state.is_done
     # Calculate reward
-    reward = current_state.value - next_state.value
+    reward = current_state.value - next_state.value + 1 # make more positive
     return next_state, reward, is_done
 
 def calculate_loss(batch, dqn, dqn_target, gamma, device):
@@ -239,7 +253,9 @@ def calculate_loss(batch, dqn, dqn_target, gamma, device):
             ).max()
         target = rewards[i] + gamma * max_next_q * ~(dones[i])
         total_loss += F.smooth_l1_loss(current_q, target)
-
+    # limit loss
+    total_loss = total_loss / 1000
+    print('loss:', total_loss)
     return total_loss
 
 def subset_flows(flows_month, remaining_links):
@@ -251,13 +267,10 @@ def subset_flows(flows_month, remaining_links):
             flows_month_new[day][order] = {k: v for k, v in flows_month[day][order].items() if k in set_remaining_links}
     return flows_month_new
 
-def new_state(big_strong_components=None, years = ['2013', '2014', '2015'],
-              months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']):
+def new_state(years = ['2013', '2014', '2015'],
+              months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11']):
     year, month = np.random.choice(years, 1)[0], np.random.choice(months, 1)[0]
-    if big_strong_components != None:
-        remaining_links = big_strong_components[np.random.choice(len(big_strong_components))]
-    else:
-        remaining_links = list(Static.links['OBJECTID'])
+    remaining_links = list(Static.links['OBJECTID'])
     day = f'{year}-{month}-01'
     flows_month = pickle.load(open(f'flows/flow_{year}_{month}.pickle', 'rb'))
     flows_month = subset_flows(flows_month, remaining_links)
@@ -265,39 +278,31 @@ def new_state(big_strong_components=None, years = ['2013', '2014', '2015'],
 
 def train_qlearning(num_steps, save_model=True, time_steps=False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    update, hard_update, batch_size = 10, 100, 10
-    epsilon, epsilon_min, epsilon_decay = 1, .5, 1/20000
-    gamma = 0.99
+    update, hard_update, batch_size = 1, 10, 10
+    epsilon, epsilon_min, epsilon_decay = 1, .1, 1/250
+    gamma = 0.5
 
     memory = ReplayBuffer(max_size = 1000) 
 
     # LUCAS
-    dqn = ConvGraphNet(input_dim = 127).to(device)
-    dqn_target = ConvGraphNet(input_dim = 127).to(device)
+    dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(device)
+    dqn_target = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(device)
     dqn_target.load_state_dict(dqn.state_dict())
+    print(f'Number of parameters: {sum([p.numel() for p in dqn.parameters()])}')
 
-    optimizer = torch.optim.Adam(dqn.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(dqn.parameters(), lr=1e-5)
 
-    def warmup(current_step, warmup_steps=2):
-        if current_step < warmup_steps:
-            return float(current_step / warmup_steps)
-        else:                                 
-            return max(0.0, float(num_steps - current_step) / float(max(1, num_steps - warmup_steps)))
-
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
-
-    # Get good subsets to run on
-    big_strong_components = []
-    for nodes in nx.strongly_connected_components(Static.dual_graph):
-        if len(nodes) >= 1000: big_strong_components += [list(nodes)]
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=2, factor=.5, eps=0)
 
     scores, losses = [], []
-    done, score = True, 0
+    current_state = new_state()
+    done, score = False, 0
     for i in range(num_steps):
         if time_steps:
             start = time.time()
         if done:
-            current_state = new_state(months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'])
+            current_state = new_state()
+            print('score:', score)
             scores += [score]
             score = 0
     
@@ -312,24 +317,26 @@ def train_qlearning(num_steps, save_model=True, time_steps=False):
             loss = calculate_loss(batch, dqn, dqn_target, gamma, device) # calculate loss and update weights
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(dqn.parameters(), 1)
             optimizer.step()
-            scheduler.step()
+            if len(losses) > 10:
+                scheduler.step(np.mean(losses[-10:]))
             epsilon -= epsilon_decay
             epsilon = max(epsilon, epsilon_min)
 
-            losses += [loss]
+            losses += [loss.item()]
 
             if (i - batch_size) % hard_update == 0:
                 dqn_target.load_state_dict(dqn.state_dict())
 
         current_state = next_state
-        if time_steps:
+        if time_steps and i > 0:
             print(f'Time: {time.time() - start}')
             print()
 
     print(f'Median: {np.round(np.median(scores), 2)}, Mean: {np.round(np.mean(scores),2)}')
     if save_model:
-        torch.save(dqn.state_dict(), 'saved_models/new_dqn.pt')
+        torch.save(dqn.state_dict(), 'saved_models/dqn.pt')
     return dqn
 
 
@@ -355,55 +362,72 @@ def select_action_heuristic(current_state, method, dqn=None):
     if method == 'traffic_collision': return select_traffic_collision(current_state)
     if method == 'qlearning': return select_action(current_state, 0, dqn)
 
-def test_RL(dqn, num_trajectories):
+def test_RL(dqn, num_steps):
     scores_compare = {}
-    for method in ['traffic', 'random', 'collision', 'traffic_collision', 'qlearning']:
+    reward_compare = {}
+    methods = ['qlearning', 'traffic_collision', 'collision', 'traffic', 'random']
+    for method in methods:
         print(method)
         scores_compare[method] = []
-        done, score = True, 0
-        while len(scores_compare[method]) < num_trajectories:
+        reward_compare[method] = []
+        current_state = new_state()
+        done, score = False, 0
+        for _ in range(num_steps):
             if done:
-                current_state = new_state(months=['12'])
+                current_state = new_state()
                 scores_compare[method] += [score]
                 print(score)
                 score = 0
             
             action = select_action_heuristic(current_state, method=method, dqn=dqn)
             next_state, reward, done = take_action(current_state, action)
+            reward_compare[method] += [reward]
             score += reward
 
             current_state = next_state
-        mean = np.round(np.mean(scores_compare[method]),2)
-        median = np.round(np.median(scores_compare[method]),2)
-        std = np.round(np.std(scores_compare[method]),2)
+        mean = np.round(np.mean(reward_compare[method]),2)
+        median = np.round(np.median(reward_compare[method]),2)
+        std = np.round(np.std(reward_compare[method]),2)
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
-        print(scores_compare[method])
-    return scores_compare
+        print(reward_compare[method])
+    for method in methods:
+        mean = np.round(np.mean(reward_compare[method]),2)
+        median = np.round(np.median(reward_compare[method]),2)
+        std = np.round(np.std(reward_compare[method]),2)
+        print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
+    return reward_compare
 
 def plot_q_values(dqn):
-    current_state = new_state(years=['2013', '2014', '2015'], months=['12'])
+    current_state = new_state()
     q_values = dqn(current_state.node_features, current_state.edges).detach().squeeze().numpy()
+    q_values = (q_values-q_values.mean())/q_values.std()
+    print(q_values.max())
+    print(q_values.min())
     indices = np.argsort(q_values)[:100]
     link_ids = np.array(current_state.remaining_links)[indices]
     print('Top 100 Links in Q Value:')
     print(link_ids)
-    min_q = np.min(q_values)
-    if min_q <= 0:
-        q_values = q_values - min_q + 1
     new_links = Static.links.copy(deep=True)[Static.links['OBJECTID'].isin(current_state.remaining_links)]
     new_links.set_index('OBJECTID', inplace=True)
     new_links.sort_index(inplace=True)
     new_links['q_values'] = q_values
-    new_links.plot(column = q_values, cmap = 'viridis', figsize = (10,10), legend = True,
-                norm=colors.LogNorm(vmin=q_values.min(), vmax=q_values.max()))
+    new_links.plot(column = q_values, cmap = 'viridis', figsize = (10,10), legend = True)
+    plt.title(f'Q Values in Manhattan on {current_state.day}')
+    plt.axis('off')
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
 
 
-dqn = train_qlearning(num_steps=500, save_model=True, time_steps=True)
+#dqn = train_qlearning(num_steps=1000, save_model=True, time_steps=True)
 # LUCAS
-#dqn = ConvGraphNet(input_dim = 127)
-#dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
-#dqn.eval()
-#for param in dqn.parameters(): param.requires_grad = False
+dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64])
+dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
+dqn.eval()
+for param in dqn.parameters(): param.requires_grad = False
 plot_q_values(dqn)
-test_RL(dqn, num_trajectories=100)
+test_RL(dqn, num_steps=500)
+## Output
+## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
+## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33
+## Method: collision, Median: -0.86, Mean: -1.84, Std: 5.85
+## Method: traffic, Median: -20.21, Mean: -11.83, Std: 18.28
+## Method: random, Median: 0.72, Mean: -0.86, Std: 4.14

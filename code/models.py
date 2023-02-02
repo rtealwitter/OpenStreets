@@ -30,19 +30,18 @@ class RecurrentGCN(torch.nn.Module):
         return predictions
 
 class ConvGraphNet(torch.nn.Module):
-    def __init__(self, input_dim, output_dim=1):
+    def __init__(self, input_dim, hidden_dim_sequence=[1024, 512, 256, 64], output_dim=1):
         super(ConvGraphNet, self).__init__()
         # Input layer
-        self.layers = nn.ModuleList([
-            GCNConv(input_dim, 512),
-            GCNConv(512, 256),
-            GCNConv(256, 128),
-            GCNConv(128, 64),
-            GCNConv(64, output_dim),
-        ])
+        self.layers = nn.ModuleList([GCNConv(input_dim, hidden_dim_sequence[0])])
+        for i in range(1, len(hidden_dim_sequence)):
+            self.layers.append(GCNConv(hidden_dim_sequence[i-1], hidden_dim_sequence[i]))
+        self.last_layer = GCNConv(hidden_dim_sequence[-1], output_dim)
+
     def forward(self, x, edge_index):
         for layer in self.layers:
-            x = F.dropout(F.relu(layer(x, edge_index)), p=0.1, training=self.training)
+            x = F.relu(layer(x, edge_index))
+        x = self.last_layer(x, edge_index)
         return x
 
 class DeeperGCN(torch.nn.Module):
