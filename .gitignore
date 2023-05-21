@@ -14,3 +14,4 @@ dstgcn_loaded_data/
 *.out
 saved_models/excellent_model.pt
 all_metrics_saved
+overlay*

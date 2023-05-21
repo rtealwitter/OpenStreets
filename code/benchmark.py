@@ -1,4 +1,4 @@
-from training import train_lightgbm, train_xgboost, train, train_minibatch, train_bce_minibatch, train_random_forest
+from training import train_lightgbm, train_xgboost, train, train_minibatch, train_bce_minibatch, train_random_forest, train_gaussian_nb
 from dstgcn_training import train_dstgcn
 import time 
 import numpy as np
