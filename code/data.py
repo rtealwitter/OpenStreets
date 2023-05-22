@@ -4,7 +4,7 @@ import networkx as nx
 import numpy as np
 import pickle
 # pip install azureml-opendatasets-runtimeusing
-from azureml.opendatasets import NycTlcYellow
+#from azureml.opendatasets import NycTlcYellow
 import calendar
 from dateutil import parser
 from sklearn import preprocessing
@@ -346,7 +346,7 @@ class TrafficDataset(Dataset):
         for year in years:
             list_of_year_collisions.append(gpd.read_file(f'data/collisions_{year}.json'))
         self.collisions = gpd.GeoDataFrame( pd.concat( list_of_year_collisions, ignore_index=True) )
-        print(len(self.collisions))
+        #print(len(self.collisions))
         # If we change years, different weather features will be returned
         # because we eliminate columns with missing values
         self.weather = preprocess_weather(years)
