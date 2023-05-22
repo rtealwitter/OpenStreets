@@ -33,7 +33,7 @@ We made one (very pretty) figure of Q values in Manhattan according to our deep 
 • [NYC Taxi Data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
 
 #### Installation notes
-If you have issues installing torch-sparse and torch-scatter, check your torch version by running `python` and then `torch.__version__`. Once you exit the python environment, uninstall the current versions by running `pip uninstall torch-scatter torch-sparse`. Then, if your torch version is `2.0.1+cu117` run `pip uninstall torch-sparse pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.0.1+cu117.html`
+If you have issues installing torch-sparse and torch-scatter, check your torch version by running `python` and then `torch.__version__`. Once you exit the python environment, uninstall the current versions by running `pip uninstall torch-scatter torch-sparse`. Then, if your torch version is `2.0.1+cu117` run `pip install torch-scatter torch-sparse -f https://data.pyg.org/whl/torch-2.0.1+cu117.html`
 
 #### Build LightGBM for GPU
 https://stackoverflow.com/questions/60360750/lightgbm-classifier-with-gpu
