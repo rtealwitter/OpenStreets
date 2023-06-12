@@ -94,6 +94,10 @@ class gwnet(nn.Module):
 
 
 
+        # Modification 1: filter_convs, gate_convs now have kernel_size as (1,kernel_size-1) instead of (1,kernel_size).
+        # Reason 1: so that last dimension stays constant
+        # Modification 2: gate_convs, residual_convs, skip_convs, now have Conv2d instead of Conv1d.
+        # Reason 2: otherwise, error with dimension mismatch is thrown
         for b in range(blocks):
             additional_scope = kernel_size - 1
             new_dilation = 1
@@ -101,19 +105,19 @@ class gwnet(nn.Module):
                 # dilated convolutions
                 self.filter_convs.append(nn.Conv2d(in_channels=residual_channels,
                                                    out_channels=dilation_channels,
-                                                   kernel_size=(1,kernel_size),dilation=new_dilation))
+                                                   kernel_size=(1,kernel_size-1),dilation=new_dilation))
 
-                self.gate_convs.append(nn.Conv1d(in_channels=residual_channels,
+                self.gate_convs.append(nn.Conv2d(in_channels=residual_channels,
                                                  out_channels=dilation_channels,
-                                                 kernel_size=(1, kernel_size), dilation=new_dilation))
+                                                 kernel_size=(1, kernel_size-1), dilation=new_dilation))
 
                 # 1x1 convolution for residual connection
-                self.residual_convs.append(nn.Conv1d(in_channels=dilation_channels,
+                self.residual_convs.append(nn.Conv2d(in_channels=dilation_channels,
                                                      out_channels=residual_channels,
                                                      kernel_size=(1, 1)))
 
                 # 1x1 convolution for skip connection
-                self.skip_convs.append(nn.Conv1d(in_channels=dilation_channels,
+                self.skip_convs.append(nn.Conv2d(in_channels=dilation_channels,
                                                  out_channels=skip_channels,
                                                  kernel_size=(1, 1)))
                 self.bn.append(nn.BatchNorm2d(residual_channels))
