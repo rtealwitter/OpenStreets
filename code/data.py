@@ -360,6 +360,8 @@ class TrafficDataset(Dataset):
         assert 0 in dual_graph.nodes # check the relabeling worked
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.edges = torch.tensor(np.array(list(dual_graph.edges))).long().to(self.device).T
+        filename_edges = 'loaded_data/edges.pkl'
+        pickle.dump(self.edges, open(filename_edges, 'wb'))
     
     def __len__(self):
         return len(self.year_months)
