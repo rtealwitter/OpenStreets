@@ -74,12 +74,10 @@ for epoch in range(num_epochs):
         X = X.unsqueeze(0) # one batch
         X = X.transpose(1,3) # convention
         modified_X = X[:,:,:,:-1] # time series
-        modified_y = y[1:,:] # time series next step
+        modified_y = y[:-1,:] # time series next step
         modified_y = modified_y.flatten()
         out = model(modified_X)
         out = out.squeeze(0).permute(2,1,0).reshape(-1,2)
-        print('out', out.shape)
-        print('y', modified_y.shape)
         loss = criterion(out, modified_y)
         loss.backward()
         optimizer.zero_grad()
