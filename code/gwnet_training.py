@@ -58,17 +58,21 @@ def verbose_output(out, y):
     return classification_report(true_labels, pred_labels, output_dict=True)
 
 train_dataloader, valid_dataloader = build_dataloaders(
-    train_years=[2013], valid_years=[2013], train_months=['01', '02'], valid_months=['12']
+    train_years=[2013], valid_years=[2013],
+    train_months=['01', '02', '03'],#, '04', '05', '06', '07', '08', '09', '10', '11'],
+    valid_months=['12']
 )
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = gwnet(device, num_nodes=19391, in_dim=127, out_dim=2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=.001, weight_decay=0.0001) # hyperparameters from default
 
-num_epochs = 1
+print('Starting training...')
+num_epochs = 10
 for epoch in range(num_epochs):
     for i, (X, y, edges) in enumerate(train_dataloader):
         ratio = y.numel() / y.sum()
-        criterion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio+.2]))
+        criterion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio*1.2]))
         criterion.to(device)
         X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
         X = X.unsqueeze(0) # one batch
@@ -80,8 +84,8 @@ for epoch in range(num_epochs):
         out = out.squeeze(0).permute(2,1,0).reshape(-1,2)
         loss = criterion(out, modified_y)
         loss.backward()
-        optimizer.zero_grad()
         optimizer.step()
+        optimizer.zero_grad()
         print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {loss.item()}')
-        #verbose_output(out.cpu(), y.cpu())
+        verbose_output(out.cpu(), modified_y.cpu())
 
