@@ -11,6 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
+from gwnet import gwnet
 
 # Data loaders
 def build_dataloaders(train_years, valid_years, train_months, valid_months):
@@ -20,7 +21,7 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
-def initialize_training(model_name='recurrent', num_epochs=2):
+def initialize_training(model_name='recurrent', num_epochs=10):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if model_name == 'rgnn':
         # I hid some hyper parameters in the model's initialization step.
@@ -41,6 +42,9 @@ def initialize_training(model_name='recurrent', num_epochs=2):
         #[384,192,96,48,48] .74
         #[512,256,128,64,64] .76
     
+    elif model_name == 'gwnet':
+        model = gwnet(device, num_nodes=19391, in_dim=127, out_dim=2).to(device)
+    
     num_updates = 12*num_epochs
     warmup_steps = 2
     
@@ -53,10 +57,10 @@ def initialize_training(model_name='recurrent', num_epochs=2):
         else:                                 
             return max(0.0, float(num_updates - current_step) / float(max(1, num_updates - warmup_steps)))
     
-    if model_name == 'scalable_rgnn' or 'lite_scalable_rgnn':
+    if model_name == 'scalable_rgnn' or model_name == 'lite_scalable_rgnn':
         optimizer = torch.optim.Adam(model.parameters(), lr=0.0003, weight_decay=0.0001)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
-    elif model_name == 'gnn':
+    elif model_name == 'gnn' or model_name == 'gwnet':
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0001)
         scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=warmup)
         # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=.5, patience=2, threshold=1e-3, min_lr=1e-6)
@@ -98,13 +102,26 @@ def train(model_name, num_epochs, save_model=True, return_class_report_dict=True
             y.to(device)
             edges.to(device)
             optimizer.zero_grad()
-            out = model(X, edges)
-            loss = criterion(out.permute(0,2,1), y)
+            if model_name == 'gwnet':
+                # Graph wavenets are a bit special
+                X = X.unsqueeze(0) # one batch
+                X = X.transpose(1,3) # convention
+                modified_X = X[:,:,:,:-1] # time series
+                modified_y = y[:-1,:] # time series next step
+                modified_y = modified_y.flatten()
+                out = model(modified_X)
+                out = out.squeeze(0).permute(2,1,0).reshape(-1,2)
+                loss = criterion(out, modified_y)
+                verbose_output(out.cpu(), modified_y.cpu())
+            else:
+                out = model(X, edges)
+                loss = criterion(out.permute(0,2,1), y)
+                verbose_output(out.cpu(), y.cpu())
             loss.backward()
             optimizer.step()
             train_losses += [loss.item()]
             print(f'Epoch: {epoch} \t Iteration: {i} \t Train Loss: {train_losses[-1]}')
-            verbose_output(out.cpu(), y.cpu())
+            
             if model_name == 'gnn':
                 scheduler.step(loss)
             else:   
@@ -116,11 +133,24 @@ def train(model_name, num_epochs, save_model=True, return_class_report_dict=True
             y.to(device)
             edges.to(device)        
             with torch.no_grad():
-                out = model(X, edges)
-                loss = criterion(out.permute(0,2,1), y)
+                if model_name == 'gwnet':
+                    # graph wavenets are a bit special
+                    X = X.unsqueeze(0) # one batch
+                    X = X.transpose(1,3) # convention
+                    modified_X = X[:,:,:,:-1] # time series
+                    modified_y = y[:-1,:] # time series next step
+                    modified_y = modified_y.flatten()
+                    out = model(modified_X)
+                    out = out.squeeze(0).permute(2,1,0).reshape(-1,2)
+                    loss = criterion(out, modified_y)                    
+                    metrics = verbose_output(out.cpu(), modified_y.cpu())
+                else:
+                    out = model(X, edges)
+                    loss = criterion(out.permute(0,2,1), y)
+                    metrics = verbose_output(out.cpu(), y.cpu())
                 valid_losses += [loss.item()]            
             print(f'Epoch: {epoch} \t Valid Loss: {valid_losses[-1]}')
-            metrics = verbose_output(out.cpu(), y.cpu())
+            
         if metrics['macro avg']['recall'] > best_recall:
             best_recall = metrics['macro avg']['recall']
             report_dict = metrics
@@ -250,7 +280,7 @@ def train_bce_minibatch(model_name, num_epochs, save_model=True, minibatch_size=
         return report_dict
 
 
-def train_adaboost(num_epochs=5, num_learners=30, verbose=True):
+def train_adaboost(num_epochs=10, num_learners=30, verbose=True):
     train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013], valid_years=[2014])
     X, y, edges = next(iter(train_dataloader))
     X, y, edges = X.squeeze(), y.squeeze(0).float(), edges.squeeze()

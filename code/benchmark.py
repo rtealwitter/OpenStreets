@@ -22,6 +22,15 @@ def benchmark(seeds=[3,4,5,6,7,8]):
     benchmark_launch_time = "{:%Y_%m_%d_%H_%M_%S}".format(datetime.now())
     for seed in seeds:
         np.random.seed(seed)
+        print('Training Graph wavenet:')
+        start = time.time()
+        gwnet_metrics = train(model_name='gwnet', num_epochs=num_epochs, save_model=True)
+        if 'gwnet' not in report_dicts:
+            report_dicts['gwnet'] = []
+        report_dicts['gwnet'].append(gwnet_metrics)
+        save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
+        print(f'Graph Wavenet took: {time.time() - start}') 
+    
         print('Training GaussianNB:')
         start = time.time()
         gnb_metrics = train_gaussian_nb()
@@ -51,7 +60,7 @@ def benchmark(seeds=[3,4,5,6,7,8]):
 
         print('Training Scalable RGNN:')
         start = time.time()
-        scalable_rgnn_metrics = train_minibatch(model_name='scalable_rgnn', num_epochs=15, save_model=True)
+        scalable_rgnn_metrics = train_minibatch(model_name='scalable_rgnn', num_epochs=num_epochs, save_model=True)
         if 'scalable_rgnn' not in report_dicts:
             report_dicts['scalable_rgnn'] = []
         report_dicts['scalable_rgnn'].append(scalable_rgnn_metrics)

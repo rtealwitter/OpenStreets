@@ -5,19 +5,8 @@ from gwnet import gwnet
 from sklearn.metrics import classification_report
 import pickle
 
-# Define loaded_data folder and run below to cache data
-first_run = False
-if first_run:
-    # Run once to set up loaded_data for 2013
-    train_dataset = TrafficDataset()
-    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    for X,y,edges in train_dataloader:
-        print(X.shape)
-        print(y.shape)
-        print(edges.shape)
-
 class PreLoadedDataset(Dataset):
-    def __init__(self, years=['2013'], months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']):
+    def __init__(self, years=['2013', '2014'], months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']):
         self.years = years
         self.months = months
         self.year_months = [(year, month) for year in years for month in months]
@@ -45,7 +34,6 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
-# TODO: Rewrite verbose_output for time series graph wavenet input
 def verbose_output(out, y):
     if len(out.shape) == 3:
         pred_labels = out.argmax(axis=2).flatten().detach().numpy()
@@ -63,16 +51,27 @@ train_dataloader, valid_dataloader = build_dataloaders(
     valid_months=['12']
 )
 
+# Define loaded_data folder and run below to cache data
+first_run = False
+
+if first_run:
+    # Run once to set up loaded_data for 2013, 2014
+    train_dataset = TrafficDataset(years=['2013', '2014'])
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+    for X,y,edges in train_dataloader:
+        print(X.shape)
+        print(y.shape)
+        print(edges.shape)
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = gwnet(device, num_nodes=19391, in_dim=127, out_dim=2).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=.001, weight_decay=0.0001) # hyperparameters from default
 
-print('Starting training...')
 num_epochs = 10
 for epoch in range(num_epochs):
     for i, (X, y, edges) in enumerate(train_dataloader):
         ratio = y.numel() / y.sum()
-        criterion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio*1.2]))
+        criterion = torch.nn.CrossEntropyLoss(weight=torch.Tensor([1, ratio]))
         criterion.to(device)
         X, y, edges = X.squeeze(), y.squeeze(), edges.squeeze()
         X = X.unsqueeze(0) # one batch
