@@ -82,10 +82,13 @@ def verbose_output(out, y):
     print(classification_report(true_labels, pred_labels))
     return classification_report(true_labels, pred_labels, output_dict=True)
 
-def train(model_name, num_epochs, save_model=True, return_class_report_dict=True):
+def train(
+    model_name, num_epochs, train_dataloader, valid_dataloader, 
+    save_model=True, return_class_report_dict=True
+):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
+    #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     train_losses = []
     valid_losses = []
     best_recall = -1
@@ -161,13 +164,15 @@ def train(model_name, num_epochs, save_model=True, return_class_report_dict=True
     if return_class_report_dict:
         return report_dict
 
-def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, return_class_report_dict=True):
+def train_minibatch(
+    model_name, num_epochs, train_dataloader, valid_dataloader, save_model=True, minibatch_size=4, return_class_report_dict=True
+):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
-                                                           valid_years=[2013, 2014], 
-                                                           train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
-                                                           valid_months=['12'])
+    #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
+    #                                                       valid_years=[2013, 2014], 
+    #                                                       train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+    #                                                       valid_months=['12'])
     train_losses = []
     valid_losses = []
     best_recall = -1
@@ -220,13 +225,16 @@ def train_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, r
     if return_class_report_dict:
         return report_dict
 
-def train_bce_minibatch(model_name, num_epochs, save_model=True, minibatch_size=4, return_class_report_dict=True):
+def train_bce_minibatch(
+    model_name, num_epochs, train_dataloader, valid_dataloader,
+    save_model=True, minibatch_size=4, return_class_report_dict=True
+):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
-                                                           valid_years=[2013, 2014], 
-                                                           train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
-                                                           valid_months=['12'])
+    #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
+    #                                                       valid_years=[2013, 2014], 
+    #                                                       train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+    #                                                       valid_months=['12'])
     train_losses = []
     valid_losses = []
     best_recall = -1
@@ -280,8 +288,8 @@ def train_bce_minibatch(model_name, num_epochs, save_model=True, minibatch_size=
         return report_dict
 
 
-def train_adaboost(num_epochs=10, num_learners=30, verbose=True):
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013], valid_years=[2014])
+def train_adaboost(train_dataloader, valid_dataloader, num_epochs=10, num_learners=30, verbose=True):
+    #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013], valid_years=[2014])
     X, y, edges = next(iter(train_dataloader))
     X, y, edges = X.squeeze(), y.squeeze(0).float(), edges.squeeze()
 
@@ -353,16 +361,16 @@ def test_adaboost(learners, alphas, valid_dataloader):
     print(classification_report(labels, pred_labels))
 
 x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = None, None, None, None
-def process_for_feature_only_models(set_global=True):
+def process_for_feature_only_models(train_dataloader, valid_dataloader, set_global=True):
     global x_train_expand 
     global y_train_expand
     global x_valid_expand
     global y_valid_expand
     if all(x is None for x in [x_train_expand, y_train_expand, x_valid_expand, y_valid_expand]):
-        train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
-                                                            valid_years=[2013, 2014],
-                                                            train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
-                                                            valid_months=['12'])
+        #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
+        #                                                    valid_years=[2013, 2014],
+        #                                                    train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+        #                                                    valid_months=['12'])
 
         X_train = []
         Y_train = []
@@ -387,8 +395,10 @@ def process_for_feature_only_models(set_global=True):
     
     return x_train_expand, y_train_expand, x_valid_expand, y_valid_expand 
 
-def train_xgboost(return_class_report_dict=True):
-    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+def train_xgboost(train_dataloader, valid_dataloader, return_class_report_dict=True):
+    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models(
+        train_dataloader, valid_dataloader
+    )
 
     classes_weights = class_weight.compute_sample_weight(
         class_weight='balanced',
@@ -412,8 +422,10 @@ def train_xgboost(return_class_report_dict=True):
         return classification_report(y_valid_expand, preds, output_dict=True)
     return bst
 
-def train_lightgbm(return_class_report_dict=True):
-    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+def train_lightgbm(train_dataloader, valid_dataloader, return_class_report_dict=True):
+    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models(
+        train_dataloader, valid_dataloader
+    )
     
     classes_weights = class_weight.compute_sample_weight(
         class_weight='balanced',
@@ -453,8 +465,10 @@ def train_lightgbm(return_class_report_dict=True):
         return classification_report(y_valid_expand, preds, output_dict=True)
     return lgbm_model
 
-def train_gaussian_nb(return_class_report_dict=True):
-    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models()
+def train_gaussian_nb(train_dataloader, valid_dataloader, return_class_report_dict=True):
+    x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models(
+        train_dataloader, valid_dataloader
+    )
     
     # clf = RandomForestClassifier(n_estimators=1000,
     #                              verbose=3,

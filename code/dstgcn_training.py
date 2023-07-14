@@ -105,9 +105,9 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
-def train_dstgcn(num_epochs=3,return_class_report_dict=True):
+def train_dstgcn(train_dataloader, valid_dataloader, num_epochs=3,return_class_report_dict=True):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
+    #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     ## MODEL ##
     model = DSTGCN().to(device)
 
