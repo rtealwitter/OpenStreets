@@ -11,6 +11,10 @@ from torch.utils.data import DataLoader, Dataset
 import torch
 import os.path
 
+import sqlite3
+from sqlite3 import Error
+import time
+
 def save_progress(report_dicts, saved_name='metrics_saved', benchmark_launch_time=''):
     with open(saved_name+'_'+benchmark_launch_time+'.pkl', 'wb') as handle:
         pickle.dump(report_dicts, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -49,11 +53,11 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months, clas
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
-def benchmark(num_epochs=10, seeds=[3,4,5,6,7,8]):
+def benchmark(num_epochs=10, seeds=[0]): # 3,4,5,6,7,8
     first_time = False
-    train_years = [2013, 2014]
-    valid_years = [2013, 2014]
-    train_months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11']
+    train_years = [2013] # , 2014]
+    valid_years = [2013] # , 2014]
+    train_months = ['01', '02'] #, '03', '04', '05', '06', '07', '08', '09', '10', '11']
     valid_months = ['12']
 
     for year in train_years + valid_years:
@@ -76,7 +80,8 @@ def benchmark(num_epochs=10, seeds=[3,4,5,6,7,8]):
         start = time.time()
         gwnet_metrics = train(
             model_name='gwnet', num_epochs=num_epochs, save_model=True,
-            train_dataloader=train_dataloader, valid_dataloader=valid_dataloader
+            train_dataloader=train_dataloader, valid_dataloader=valid_dataloader,
+            model_id='gwnet'
         )
         if 'gwnet' not in report_dicts:
             report_dicts['gwnet'] = []
@@ -84,38 +89,39 @@ def benchmark(num_epochs=10, seeds=[3,4,5,6,7,8]):
         save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
         print(f'Graph Wavenet took: {time.time() - start}') 
     
-        print('Training GaussianNB:')
-        start = time.time()
-        gnb_metrics = train_gaussian_nb(train_dataloader, valid_dataloader)
-        if 'gnb' not in report_dicts:
-            report_dicts['gnb'] = []
-        report_dicts['gnb'].append(gnb_metrics)
-        save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
-        print(f'GNB took: {time.time() - start}')
+        # print('Training GaussianNB:')
+        # start = time.time()
+        # gnb_metrics = train_gaussian_nb(train_dataloader, valid_dataloader)
+        # if 'gnb' not in report_dicts:
+        #     report_dicts['gnb'] = []
+        # report_dicts['gnb'].append(gnb_metrics)
+        # save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
+        # print(f'GNB took: {time.time() - start}')
 
-        print('Training LightGBM:')
-        start = time.time()
-        light_gbm_metrics = train_lightgbm(train_dataloader, valid_dataloader)
-        if 'lightgbm' not in report_dicts:
-            report_dicts['lightgbm'] = []
-        report_dicts['lightgbm'].append(light_gbm_metrics)
-        save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
-        print(f'LightGBM took: {time.time() - start}')
+        # print('Training LightGBM:')
+        # start = time.time()
+        # light_gbm_metrics = train_lightgbm(train_dataloader, valid_dataloader)
+        # if 'lightgbm' not in report_dicts:
+        #     report_dicts['lightgbm'] = []
+        # report_dicts['lightgbm'].append(light_gbm_metrics)
+        # save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
+        # print(f'LightGBM took: {time.time() - start}')
         
-        print('Training XGBoost:')
-        start = time.time()
-        xgboost_metrics = train_xgboost(train_dataloader, valid_dataloader)
-        if 'xgboost' not in report_dicts:
-            report_dicts['xgboost'] = []
-        report_dicts['xgboost'].append(xgboost_metrics)
-        save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
-        print(f'XGBoost took: {time.time() - start}')
+        # print('Training XGBoost:')
+        # start = time.time()
+        # xgboost_metrics = train_xgboost(train_dataloader, valid_dataloader)
+        # if 'xgboost' not in report_dicts:
+        #     report_dicts['xgboost'] = []
+        # report_dicts['xgboost'].append(xgboost_metrics)
+        # save_progress(report_dicts, benchmark_launch_time=benchmark_launch_time)
+        # print(f'XGBoost took: {time.time() - start}')
 
         print('Training Scalable RGNN:')
         start = time.time()
         scalable_rgnn_metrics = train_minibatch(
             model_name='scalable_rgnn', num_epochs=num_epochs, save_model=True,
-            train_dataloader = train_dataloader, valid_dataloader = valid_dataloader
+            train_dataloader = train_dataloader, valid_dataloader = valid_dataloader,
+            model_id='scalable_rgnn'
         )
         if 'scalable_rgnn' not in report_dicts:
             report_dicts['scalable_rgnn'] = []
@@ -127,7 +133,8 @@ def benchmark(num_epochs=10, seeds=[3,4,5,6,7,8]):
         start = time.time()
         scalable_rgnn_metrics = train_minibatch(
             model_name='lite_scalable_rgnn', num_epochs=num_epochs, save_model=True,
-            train_dataloader = train_dataloader, valid_dataloader = valid_dataloader
+            train_dataloader = train_dataloader, valid_dataloader = valid_dataloader,
+            model_id='lite_scalable_rgnn'
         )
         if 'lite_scalable_rgnn' not in report_dicts:
             report_dicts['lite_scalable_rgnn'] = []
@@ -164,6 +171,6 @@ def print_summary_results(results=None, benchmark_launch_time=''):
     print(t)
 
 if __name__ == '__main__':
-    benchmark_launch_time = benchmark(num_epochs=100)
+    benchmark_launch_time = benchmark(num_epochs=1)
     print_summary_results(benchmark_launch_time=benchmark_launch_time)
     

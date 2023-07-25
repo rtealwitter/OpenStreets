@@ -13,6 +13,105 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from gwnet import gwnet
 
+import sqlite3
+from sqlite3 import Error
+import json
+import time
+
+def create_connection():
+    conn = None
+    loss_conn = None
+    try:
+        conn = sqlite3.connect('metrics.db')
+        loss_conn = sqlite3.connect('losses.db')
+        print("Successfully Connected to SQLite")
+    except Error as e:
+        print(e)
+    return conn, loss_conn
+
+def close_connection(conn, loss_conn):
+    if (conn):
+        conn.close()
+    if (loss_conn):
+        loss_conn.close()
+    
+    print("SQLite connection is closed")
+
+def classification_report_table(conn):
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS classification_report (
+                id INTEGER PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                class TEXT NOT NULL,
+                precision REAL,
+                recall REAL,
+                f1_score REAL,
+                support INTEGER,
+                model_id TEXT NOT NULL
+            )
+        """)
+        print("Table checked, it exists or has been successfully created.")
+    except Error as e:
+        print(e)
+
+def loss_table(loss_conn):
+    try:
+        cursor = loss_conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS loss_table (
+                id INTEGER PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                losses TEXT,
+                loss_type TEXT,
+                model_id TEXT NOT NULL
+            )
+        """)
+        print("Table checked, it exists or has been successfully created.")
+    except Error as e:
+        print(e)
+
+def insert_losses(loss_conn, losses, loss_type, run_id, model_id):
+    try:
+        cursor = loss_conn.cursor()
+        cursor.execute("""
+            INSERT INTO loss_table (run_id, losses, loss_type, model_id)
+            VALUES (?, ?, ?, ?)
+        """, (run_id, json.dumps(losses), loss_type, model_id))
+    except Error as e:
+        print(e)
+
+def insert_report(conn, report, run_id, model_id):
+    cursor = conn.cursor()
+    
+    for class_name, metrics in report.items():
+        if class_name in ['accuracy']:
+            continue  # Skip as it has a different structure
+        precision = metrics['precision']
+        recall = metrics['recall']
+        f1_score = metrics['f1-score']
+        support = metrics['support']
+
+        cursor.execute("""
+            INSERT INTO classification_report (run_id, class, precision, recall, f1_score, support, model_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (run_id, class_name, precision, recall, f1_score, support, model_id))
+
+    conn.commit()
+
+def classification_report_table_to_df(conn):
+    try:
+        conn = sqlite3.connect('metrics.db')
+    except Error as e:
+        print(e)
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM classification_report")
+    # convert to pandas dataframe
+    df = pd.DataFrame(cursor.fetchall(), columns=['id', 'run_id', 'class', 'precision', 'recall', 'f1_score', 'support', 'model_id'])
+    return df
+    
 # Data loaders
 def build_dataloaders(train_years, valid_years, train_months, valid_months):
     train_dataset = TrafficDataset(years=train_years, months=train_months)
@@ -20,6 +119,12 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
+
+def initialize_tracking():
+    conn, loss_conn = create_connection()
+    classification_report_table(conn)
+    loss_table(loss_conn)
+    return conn, loss_conn
 
 def initialize_training(model_name='recurrent', num_epochs=10):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -84,9 +189,10 @@ def verbose_output(out, y):
 
 def train(
     model_name, num_epochs, train_dataloader, valid_dataloader, 
-    save_model=True, return_class_report_dict=True
+    save_model=True, return_class_report_dict=True, model_id='default'
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    conn, loss_conn = initialize_tracking()
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
     #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
     train_losses = []
@@ -162,12 +268,22 @@ def train(
         torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
 
     if return_class_report_dict:
+        print('LOSSES')
+        print(valid_losses)
+        print(train_losses)
+        print()
+        run_id = str(time.time())
+        insert_report(conn, report_dict, run_id, model_id)
+        insert_losses(loss_conn, train_losses, "train", run_id, model_id)
+        insert_losses(loss_conn, valid_losses, "valid", run_id, model_id)
+        close_connection(conn, loss_conn)
         return report_dict
 
 def train_minibatch(
-    model_name, num_epochs, train_dataloader, valid_dataloader, save_model=True, minibatch_size=4, return_class_report_dict=True
+    model_name, num_epochs, train_dataloader, valid_dataloader, save_model=True, minibatch_size=4, return_class_report_dict=True, model_id='default'
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    conn, loss_conn = initialize_tracking()
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
     #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
     #                                                       valid_years=[2013, 2014], 
@@ -223,13 +339,23 @@ def train_minibatch(
         torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
     
     if return_class_report_dict:
+        print('LOSSES')
+        print(valid_losses)
+        print(train_losses)
+        print()
+        run_id = str(time.time())
+        insert_report(conn, report_dict, run_id, model_id)
+        insert_losses(loss_conn, train_losses, "train", run_id, model_id)
+        insert_losses(loss_conn, valid_losses, "valid", run_id, model_id)
+        close_connection(conn, loss_conn)
         return report_dict
 
 def train_bce_minibatch(
     model_name, num_epochs, train_dataloader, valid_dataloader,
-    save_model=True, minibatch_size=4, return_class_report_dict=True
+    save_model=True, minibatch_size=4, return_class_report_dict=True, model_id="default"
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    conn, loss_conn = initialize_tracking()
     model, optimizer, scheduler = initialize_training(model_name=model_name, num_epochs=num_epochs)
     #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014],
     #                                                       valid_years=[2013, 2014], 
@@ -285,6 +411,11 @@ def train_bce_minibatch(
         torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
     
     if return_class_report_dict:
+        run_id = str(time.time())
+        insert_report(conn, report_dict, run_id, model_id)
+        insert_losses(loss_conn, train_losses, "train", run_id, model_id)
+        insert_losses(loss_conn, valid_losses, "valid", run_id, model_id)
+        close_connection(conn, loss_conn)
         return report_dict
 
 
@@ -395,10 +526,11 @@ def process_for_feature_only_models(train_dataloader, valid_dataloader, set_glob
     
     return x_train_expand, y_train_expand, x_valid_expand, y_valid_expand 
 
-def train_xgboost(train_dataloader, valid_dataloader, return_class_report_dict=True):
+def train_xgboost(train_dataloader, valid_dataloader, return_class_report_dict=True, model_id="xgboost"):
     x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models(
         train_dataloader, valid_dataloader
     )
+    conn, loss_conn = initialize_tracking()
 
     classes_weights = class_weight.compute_sample_weight(
         class_weight='balanced',
@@ -419,13 +551,18 @@ def train_xgboost(train_dataloader, valid_dataloader, return_class_report_dict=T
     print(classification_report(y_valid_expand, preds))
     bst.save_model('saved_models/xgb.json')
     if return_class_report_dict:
-        return classification_report(y_valid_expand, preds, output_dict=True)
+        run_id = str(time.time())
+        report_dict = classification_report(y_valid_expand, preds, output_dict=True)
+        insert_report(conn, report_dict, run_id, model_id)
+        close_connection(conn, loss_conn)
+        return report_dict
     return bst
 
-def train_lightgbm(train_dataloader, valid_dataloader, return_class_report_dict=True):
+def train_lightgbm(train_dataloader, valid_dataloader, return_class_report_dict=True, model_id="lightgbm"):
     x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models(
         train_dataloader, valid_dataloader
     )
+    conn, loss_conn = initialize_tracking()
     
     classes_weights = class_weight.compute_sample_weight(
         class_weight='balanced',
@@ -462,13 +599,18 @@ def train_lightgbm(train_dataloader, valid_dataloader, return_class_report_dict=
     lgbm_model.booster_.save_model('saved_models/lightgbm.txt')
 
     if return_class_report_dict:
-        return classification_report(y_valid_expand, preds, output_dict=True)
+        run_id = str(time.time())
+        report_dict = classification_report(y_valid_expand, preds, output_dict=True)
+        insert_report(conn, report_dict, run_id, model_id)
+        close_connection(conn, loss_conn)
+        return report_dict
     return lgbm_model
 
-def train_gaussian_nb(train_dataloader, valid_dataloader, return_class_report_dict=True):
+def train_gaussian_nb(train_dataloader, valid_dataloader, return_class_report_dict=True, model_id="gaussian_nb"):
     x_train_expand, y_train_expand, x_valid_expand, y_valid_expand = process_for_feature_only_models(
         train_dataloader, valid_dataloader
     )
+    conn, loss_conn = initialize_tracking()
     
     # clf = RandomForestClassifier(n_estimators=1000,
     #                              verbose=3,
@@ -483,4 +625,8 @@ def train_gaussian_nb(train_dataloader, valid_dataloader, return_class_report_di
     print(classification_report(y_valid_expand, preds))
 
     if return_class_report_dict:
-        return classification_report(y_valid_expand, preds, output_dict=True)
+        run_id = str(time.time())
+        report_dict = classification_report(y_valid_expand, preds, output_dict=True)
+        insert_report(conn, report_dict, run_id, model_id)
+        close_connection(conn, loss_conn)
+        return report_dict
