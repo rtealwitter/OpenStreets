@@ -7,6 +7,9 @@ import torch
 from data import *
 from models import *
 
+from tracking import create_connection, close_connection, classification_report_table, loss_table, insert_losses, insert_report, classification_report_table_to_df, initialize_tracking
+import time
+
 def dstgcn_get_X_day(data_constant, weather, flows_day, day):
     # Make a deep copy of the constant link data
     spatial_features = data_constant.copy(deep=True)
@@ -105,9 +108,14 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
-def train_dstgcn(train_dataloader, valid_dataloader, num_epochs=3,return_class_report_dict=True):
+def train_dstgcn(train_dataloader, valid_dataloader, num_epochs=3,return_class_report_dict=True, model_id='dstgcn'):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    #train_dataloader, valid_dataloader = build_dataloaders(train_years=[2013, 2014], valid_years=[2013, 2014], train_months=['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], valid_months=['12'])
+    conn, loss_conn = initialize_tracking()
+    train_dataloader, valid_dataloader = build_dataloaders(
+        train_years=[2013],#, 2014], 
+        valid_years=[2013],#, 2014], 
+        train_months=['01', '02'],#, '03', '04', '05', '06', '07', '08', '09', '10', '11'], 
+        valid_months=['12'])
     ## MODEL ##
     model = DSTGCN().to(device)
 
@@ -158,5 +166,14 @@ def train_dstgcn(train_dataloader, valid_dataloader, num_epochs=3,return_class_r
     
     torch.save(model.state_dict(), 'saved_models/DSTGCN.pt')
     if return_class_report_dict:
+        print('LOSSES')
+        print(valid_losses)
+        print(train_losses)
+        print()
+        run_id = str(time.time())
+        insert_report(conn, report_dict, run_id, model_id)
+        insert_losses(loss_conn, train_losses, "train", run_id, model_id)
+        insert_losses(loss_conn, valid_losses, "valid", run_id, model_id)
+        close_connection(conn, loss_conn)
         return report_dict
     

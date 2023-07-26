@@ -12,106 +12,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from gwnet import gwnet
-
-import sqlite3
-from sqlite3 import Error
-import json
+from tracking import create_connection, close_connection, classification_report_table, loss_table, insert_losses, insert_report, classification_report_table_to_df, initialize_tracking
 import time
 
-def create_connection():
-    conn = None
-    loss_conn = None
-    try:
-        conn = sqlite3.connect('metrics.db')
-        loss_conn = sqlite3.connect('losses.db')
-        print("Successfully Connected to SQLite")
-    except Error as e:
-        print(e)
-    return conn, loss_conn
-
-def close_connection(conn, loss_conn):
-    if (conn):
-        conn.close()
-    if (loss_conn):
-        loss_conn.close()
-    
-    print("SQLite connection is closed")
-
-def classification_report_table(conn):
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS classification_report (
-                id INTEGER PRIMARY KEY,
-                run_id TEXT NOT NULL,
-                class TEXT NOT NULL,
-                precision REAL,
-                recall REAL,
-                f1_score REAL,
-                support INTEGER,
-                model_id TEXT NOT NULL
-            )
-        """)
-        print("Table checked, it exists or has been successfully created.")
-    except Error as e:
-        print(e)
-
-def loss_table(loss_conn):
-    try:
-        cursor = loss_conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS loss_table (
-                id INTEGER PRIMARY KEY,
-                run_id TEXT NOT NULL,
-                losses TEXT,
-                loss_type TEXT,
-                model_id TEXT NOT NULL
-            )
-        """)
-        print("Table checked, it exists or has been successfully created.")
-    except Error as e:
-        print(e)
-
-def insert_losses(loss_conn, losses, loss_type, run_id, model_id):
-    try:
-        cursor = loss_conn.cursor()
-        cursor.execute("""
-            INSERT INTO loss_table (run_id, losses, loss_type, model_id)
-            VALUES (?, ?, ?, ?)
-        """, (run_id, json.dumps(losses), loss_type, model_id))
-    except Error as e:
-        print(e)
-
-def insert_report(conn, report, run_id, model_id):
-    cursor = conn.cursor()
-    
-    for class_name, metrics in report.items():
-        if class_name in ['accuracy']:
-            continue  # Skip as it has a different structure
-        precision = metrics['precision']
-        recall = metrics['recall']
-        f1_score = metrics['f1-score']
-        support = metrics['support']
-
-        cursor.execute("""
-            INSERT INTO classification_report (run_id, class, precision, recall, f1_score, support, model_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (run_id, class_name, precision, recall, f1_score, support, model_id))
-
-    conn.commit()
-
-def classification_report_table_to_df(conn):
-    try:
-        conn = sqlite3.connect('metrics.db')
-    except Error as e:
-        print(e)
-
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM classification_report")
-    # convert to pandas dataframe
-    df = pd.DataFrame(cursor.fetchall(), columns=['id', 'run_id', 'class', 'precision', 'recall', 'f1_score', 'support', 'model_id'])
-    return df
-    
 # Data loaders
 def build_dataloaders(train_years, valid_years, train_months, valid_months):
     train_dataset = TrafficDataset(years=train_years, months=train_months)
@@ -119,12 +22,6 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months):
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
-
-def initialize_tracking():
-    conn, loss_conn = create_connection()
-    classification_report_table(conn)
-    loss_table(loss_conn)
-    return conn, loss_conn
 
 def initialize_training(model_name='recurrent', num_epochs=10):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
