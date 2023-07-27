@@ -407,6 +407,7 @@ def test_RL(dqn, num_steps):
         median = np.round(np.median(reward_compare[method]),2)
         std = np.round(np.std(reward_compare[method]),2)
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
+        print(reward_compare[method])
     return reward_compare
 
 def plot_q_values(dqn):
@@ -436,7 +437,7 @@ dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
 #plot_q_values(dqn)
-test_RL(dqn, num_steps=2)
+test_RL(dqn, num_steps=100)
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
 ## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33

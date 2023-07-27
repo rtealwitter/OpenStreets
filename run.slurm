@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --job-name=traffic
+#SBATCH --job-name=qlearning
 #SBATCH --open-mode=append
 #SBATCH --output=./hpc_output/%x_%j.out
 #SBATCH --error=./hpc_output/%x_%j.err
 #SBATCH --export=ALL
-#SBATCH --time=48:00:00
+#SBATCH --time=12:00:00
 #SBATCH --gres=gpu:a100:1
 #SBATCH --mem=64G
 #SBATCH --mail-type=ALL
@@ -15,5 +15,5 @@
 singularity exec --nv --overlay $SCRATCH/ClosingNYCRoads/overlay-25GB-500K.ext3:rw /scratch/work/public/singularity/cuda11.4.2-cudnn8.2.4-devel-ubuntu20.04.3.sif /bin/bash -c "
 source /ext3/env.sh
 conda activate roads
-python code/benchmark.py
+python code/qlearning.py
 "
