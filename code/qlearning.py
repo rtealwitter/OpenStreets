@@ -112,6 +112,10 @@ class Static:
         elif math.isnan(float(link_to_capacity[link])): link_to_capacity[link] = 1
         else: link_to_capacity[link] = int(link_to_capacity[link])
     
+    with open('data/objectid_to_index.pkl', 'r') as fp:
+        osid_to_index = pickle.load(fp)
+    osid_indices = list(osid_to_index.values())
+    
     # LUCAS
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[256,128,64,32,32]).to(device)
@@ -365,16 +369,15 @@ def select_action_heuristic(current_state, method, dqn=None):
     if method == 'openstreets': return open_street_link(current_state.remaining_links)
 
 def open_street_link(remaining_links):
-    with open('data/map_open_streets.json', 'r') as fp:
-        open_street_links = json.load(fp)
-
-    street_to_close = np.random.choice(open_street_links)
+    #osid_remaining = [x for x in Static.osid_indices if x in remaining_links]
+    
+    return np.random.choice(Static.osid_indices)
     
 
 def test_RL(dqn, num_steps):
     scores_compare = {}
     reward_compare = {}
-    methods = ['qlearning', 'traffic_collision', 'collision', 'traffic', 'random']
+    methods = ['openstreets', 'qlearning', 'traffic_collision', 'collision', 'traffic', 'random']
     for method in methods:
         print(method)
         scores_compare[method] = []
@@ -432,8 +435,8 @@ dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64])
 dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
-plot_q_values(dqn)
-test_RL(dqn, num_steps=500)
+#plot_q_values(dqn)
+test_RL(dqn, num_steps=2)
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
 ## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33
