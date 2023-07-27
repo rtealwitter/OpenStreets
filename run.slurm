@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=qlearning
+#SBATCH --job-name=benchmark
 #SBATCH --open-mode=append
 #SBATCH --output=./hpc_output/%x_%j.out
 #SBATCH --error=./hpc_output/%x_%j.err
@@ -15,5 +15,5 @@
 singularity exec --nv --overlay $SCRATCH/ClosingNYCRoads/overlay-25GB-500K.ext3:rw /scratch/work/public/singularity/cuda11.4.2-cudnn8.2.4-devel-ubuntu20.04.3.sif /bin/bash -c "
 source /ext3/env.sh
 conda activate roads
-python code/qlearning.py
+python code/benchmark.py
 "
