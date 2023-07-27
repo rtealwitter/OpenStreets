@@ -112,7 +112,7 @@ class Static:
         elif math.isnan(float(link_to_capacity[link])): link_to_capacity[link] = 1
         else: link_to_capacity[link] = int(link_to_capacity[link])
     
-    with open('data/objectid_to_index.pkl', 'r') as fp:
+    with open('data/objectid_to_index.pkl', 'rb') as fp:
         osid_to_index = pickle.load(fp)
     osid_indices = list(osid_to_index.values())
     
