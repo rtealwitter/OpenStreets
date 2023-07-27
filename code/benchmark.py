@@ -171,6 +171,6 @@ def print_summary_results(results=None, benchmark_launch_time=''):
     print(t)
 
 if __name__ == '__main__':
-    benchmark_launch_time = benchmark(num_epochs=1)
+    benchmark_launch_time = benchmark(num_epochs=100)
     print_summary_results(benchmark_launch_time=benchmark_launch_time)
     
