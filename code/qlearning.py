@@ -14,6 +14,7 @@ import pandas as pd
 import copy
 import momepy
 import math
+import json
 
 # Helper functions for the state
 def k_shortest_paths(graph, source, target, k):
@@ -361,6 +362,14 @@ def select_action_heuristic(current_state, method, dqn=None):
     if method == 'collision': return select_collision(current_state)
     if method == 'traffic_collision': return select_traffic_collision(current_state)
     if method == 'qlearning': return select_action(current_state, 0, dqn)
+    if method == 'openstreets': return open_street_link(current_state.remaining_links)
+
+def open_street_link(remaining_links):
+    with open('data/map_open_streets.json', 'r') as fp:
+        open_street_links = json.load(fp)
+
+    street_to_close = np.random.choice(open_street_links)
+    
 
 def test_RL(dqn, num_steps):
     scores_compare = {}
