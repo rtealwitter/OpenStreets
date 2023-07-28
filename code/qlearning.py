@@ -132,8 +132,8 @@ class State:
         self.remaining_links = [x for x in remaining_links if x not in removed_links]
         # done if flows are 0 or if there is no path without the removed links
         self.flows_day, self.is_done = self.remove_links_from_flows()        
-        self.edges = self.remove_links_from_edges()
-        self.node_features = self.remove_links_from_node_features()
+        self.edges = self.remove_links_from_edges().to(Static.device)
+        self.node_features = self.remove_links_from_node_features().to(Static.device)
         self.value = self.calculate_value()
 
     def remove_links_from_flows(self):

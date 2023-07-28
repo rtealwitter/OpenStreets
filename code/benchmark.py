@@ -53,7 +53,7 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months, clas
     valid_dataloader = DataLoader(valid_dataset, batch_size=1, shuffle=False)
     return train_dataloader, valid_dataloader
 
-def benchmark(num_epochs=10, seeds=[0]): # 3,4,5,6,7,8
+def benchmark(num_epochs=10, seeds=[0,1,2,3,4,5,6,7,8,9]):
     first_time = False
     train_years = [2013] # , 2014]
     valid_years = [2013] # , 2014]
