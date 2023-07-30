@@ -377,6 +377,7 @@ def open_street_link(remaining_links):
 def test_RL(dqn, num_steps):
     scores_compare = {}
     reward_compare = {}
+    value_compare = {}
     methods = ['Open Streets', 'Q Values', 'Random']#'traffic_collision', 'collision', 'traffic', 'random']
     seeds = list(range(40))
     for method in methods:
