@@ -382,7 +382,7 @@ def test_RL(dqn, num_steps):
     for method in methods:
         scores_compare[method] = []
         reward_compare[method] = []
-        value_compare[method] = e]
+        value_compare[method] = []
     for seed in seeds:
         np.random.seed(seed)
         for method in methods:
