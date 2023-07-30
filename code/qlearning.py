@@ -234,7 +234,7 @@ def take_action(current_state, action):
     is_done = is_done or next_state.is_done
     # Calculate reward
     reward = current_state.value - next_state.value + 1 # make more positive
-    return next_state, reward, is_done
+    return next_state, reward, is_done, next_state.value
 
 def calculate_loss(batch, dqn, dqn_target, gamma, device):
     # Get batch
@@ -312,7 +312,7 @@ def train_qlearning(num_steps, save_model=True, time_steps=False):
             score = 0
     
         action = select_action(current_state, epsilon, dqn) # greedy with 1-epsilon and random with epsilon
-        next_state, reward, done = take_action(current_state, action)
+        next_state, reward, done, value = take_action(current_state, action)
         print('reward', reward)
         score += reward
         memory.store({'current_state': current_state, 'next_state': next_state, 'action': action, 'reward': reward, 'done': done})
@@ -357,7 +357,7 @@ def select_traffic_collision(current_state):
     tradeoff = current_state.tradeoff
     traffic = calculate_traffic(current_state.remaining_links, current_state.flows_day)
     probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
-    output = torch.tensor(traffic) * (1-tradeoff) + probabilities * tradeoff
+    output = torch.tensor(traffic).to(Static.device) * (1-tradeoff) + probabilities * tradeoff
     return torch.argmax(output).item()
 
 def select_action_heuristic(current_state, method, dqn=None):
@@ -377,38 +377,70 @@ def open_street_link(remaining_links):
 def test_RL(dqn, num_steps):
     scores_compare = {}
     reward_compare = {}
-    methods = ['openstreets', 'qlearning', 'traffic_collision', 'collision', 'traffic', 'random']
+    methods = ['Open Streets', 'Q Values', 'Random']#'traffic_collision', 'collision', 'traffic', 'random']
+    seeds = list(range(40))
     for method in methods:
-        print(method)
         scores_compare[method] = []
         reward_compare[method] = []
-        current_state = new_state()
-        done, score = False, 0
-        for _ in range(num_steps):
-            if done:
-                current_state = new_state()
-                scores_compare[method] += [score]
-                print(score)
-                score = 0
-            
-            action = select_action_heuristic(current_state, method=method, dqn=dqn)
-            next_state, reward, done = take_action(current_state, action)
-            reward_compare[method] += [reward]
-            score += reward
-
-            current_state = next_state
-        mean = np.round(np.mean(reward_compare[method]),2)
-        median = np.round(np.median(reward_compare[method]),2)
-        std = np.round(np.std(reward_compare[method]),2)
-        print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
-        print(reward_compare[method])
+        value_compare[method] = e]
+    for seed in seeds:
+        np.random.seed(seed)
+        for method in methods:
+            reward_compare_method = []
+            value_compare_method = []
+            print(method)
+            current_state = new_state()
+            done, score = False, 0
+            for _ in range(num_steps):
+                if done:
+                    current_state = new_state()
+                    scores_compare[method] += [score]
+                    print(score)
+                    score = 0
+                try:
+                    action = select_action_heuristic(current_state, method=method, dqn=dqn)
+                    next_state, reward, done, value = take_action(current_state, action)
+                    reward_compare_method += [reward]
+                    value_compare_method += [value]
+                    score += reward
+                except:
+                    current_state = new_state()
+                current_state = next_state
+            mean = np.round(np.mean(reward_compare_method),2)
+            median = np.round(np.median(reward_compare_method),2)
+            std = np.round(np.std(reward_compare_method),2)
+            value_compare[method] += [value_compare_method]
+            reward_compare[method] += [reward_compare_method]
+            print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
     for method in methods:
         mean = np.round(np.mean(reward_compare[method]),2)
         median = np.round(np.median(reward_compare[method]),2)
         std = np.round(np.std(reward_compare[method]),2)
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
         print(reward_compare[method])
+    plot_rl(methods, reward_compare, filename='reward_rl_comparison.pdf')
+    plot_rl(methods, value_compare, filename='value_rl_comparison.pdf')
     return reward_compare
+
+def plot_rl(methods, reward_compare, filename):
+    linestyles = ['solid', 'dotted', 'dashed', 'dashdot', (0,(1,10)), (0, (1,1)), (5,(10,3))]
+    colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
+    for i, method in enumerate(methods):
+        reward_compare_method = np.array(reward_compare[method])
+        average = reward_compare_method.mean(axis=0)
+        std = reward_compare_method.std(axis=0)
+        upper_confidence = average + std
+        lower_confidence = average - std 
+        xs = list(range(len(average)))
+        plt.plot(xs, average, label=method, color=colors[i], linestyle=linestyles[i])
+        plt.fill_between(xs, upper_confidence, lower_confidence, color=colors[i], alpha=0.2)
+
+    plt.title('Reward of Heuristics Number of Roads Opened')
+    plt.ylabel('Reward')
+    plt.xlabel('Number of Streets Opened')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(f'figures/{filename}.pdf')
 
 def plot_q_values(dqn):
     current_state = new_state()
@@ -432,12 +464,12 @@ def plot_q_values(dqn):
 
 #dqn = train_qlearning(num_steps=1000, save_model=True, time_steps=True)
 # LUCAS
-dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64])
+dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
 dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
 #plot_q_values(dqn)
-test_RL(dqn, num_steps=100)
+test_RL(dqn, num_steps=30)
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
 ## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33
