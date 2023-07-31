@@ -362,11 +362,11 @@ def select_traffic_collision(current_state):
 
 def select_action_heuristic(current_state, method, dqn=None):
     if method == 'traffic': return select_traffic(current_state)
-    if method == 'random': return np.random.choice(len(current_state.remaining_links))
+    if method == 'Random': return np.random.choice(len(current_state.remaining_links))
     if method == 'collision': return select_collision(current_state)
     if method == 'traffic_collision': return select_traffic_collision(current_state)
-    if method == 'qlearning': return select_action(current_state, 0, dqn)
-    if method == 'openstreets': return open_street_link(current_state.remaining_links)
+    if method == 'Q Values': return select_action(current_state, 0, dqn)
+    if method == 'Open Streets': return open_street_link(current_state.remaining_links)
 
 def open_street_link(remaining_links):
     #osid_remaining = [x for x in Static.osid_indices if x in remaining_links]
@@ -398,15 +398,17 @@ def test_RL(dqn, num_steps):
                     scores_compare[method] += [score]
                     print(score)
                     score = 0
+
                 try:
                     action = select_action_heuristic(current_state, method=method, dqn=dqn)
                     next_state, reward, done, value = take_action(current_state, action)
-                    reward_compare_method += [reward]
-                    value_compare_method += [value]
                     score += reward
+                    current_state = next_state
                 except:
-                    current_state = new_state()
-                current_state = next_state
+                    print('Excepting...')
+                    current_state = new_state() 
+                reward_compare_method += [reward]
+                value_compare_method += [value]
             mean = np.round(np.mean(reward_compare_method),2)
             median = np.round(np.median(reward_compare_method),2)
             std = np.round(np.std(reward_compare_method),2)
