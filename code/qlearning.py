@@ -134,7 +134,7 @@ class State:
         self.flows_day, self.is_done = self.remove_links_from_flows()        
         self.edges = self.remove_links_from_edges().to(Static.device)
         self.node_features = self.remove_links_from_node_features().to(Static.device)
-        self.value = self.calculate_value()
+        self.value, self.total_flow, self.total_probability = self.calculate_value()
 
     def remove_links_from_flows(self):
         # Subset graph to nodes connected to remaining links and removed links
@@ -177,7 +177,7 @@ class State:
         total_probability = total_probability / 9654 * 1000 # normalize from random day
         print('traffic', total_flow)
         print('probability', total_probability)
-        return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability
+        return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability, total_flow, total_probability
 
 class ReplayBuffer:
     def __init__(self, max_size):
@@ -211,7 +211,7 @@ def select_action(current_state, epsilon, dqn):
         print('selected_action:', selected_action)
     return selected_action 
 
-def take_action(current_state, action):
+def take_action(current_state, action, return_all=False):
     # Get new date
     current_day = pd.DatetimeIndex([current_state.day])[0]
     next_day = current_day + pd.DateOffset(days=1)
@@ -234,7 +234,9 @@ def take_action(current_state, action):
     is_done = is_done or next_state.is_done
     # Calculate reward
     reward = current_state.value - next_state.value + 1 # make more positive
-    return next_state, reward, is_done, next_state.value
+    if return_all:
+        return next_state, reward, is_done, next_state.total_flow, next_state.total_probability
+    return next_state, reward, is_done
 
 def calculate_loss(batch, dqn, dqn_target, gamma, device):
     # Get batch
@@ -312,7 +314,7 @@ def train_qlearning(num_steps, save_model=True, time_steps=False):
             score = 0
     
         action = select_action(current_state, epsilon, dqn) # greedy with 1-epsilon and random with epsilon
-        next_state, reward, done, value = take_action(current_state, action)
+        next_state, reward, done = take_action(current_state, action)
         print('reward', reward)
         score += reward
         memory.store({'current_state': current_state, 'next_state': next_state, 'action': action, 'reward': reward, 'done': done})
@@ -375,20 +377,18 @@ def open_street_link(remaining_links):
     
 
 def test_RL(dqn, num_steps):
-    scores_compare = {}
-    reward_compare = {}
-    value_compare = {}
     methods = ['Open Streets', 'Q Values', 'Random']#'traffic_collision', 'collision', 'traffic', 'random']
-    seeds = list(range(40))
-    for method in methods:
-        scores_compare[method] = []
-        reward_compare[method] = []
-        value_compare[method] = []
+    scores_compare = {method : [] for method in methods}
+    reward_compare = {method : [] for method in methods}
+    collision_compare = {method : [] for method in methods}
+    traffic_compare = {method : [] for method in methods}
+    seeds = list(range(100))
     for seed in seeds:
         np.random.seed(seed)
         for method in methods:
             reward_compare_method = []
-            value_compare_method = []
+            collision_compare_method = []
+            traffic_compare_method = []
             print(method)
             current_state = new_state()
             done, score = False, 0
@@ -398,21 +398,22 @@ def test_RL(dqn, num_steps):
                     scores_compare[method] += [score]
                     print(score)
                     score = 0
-
                 try:
                     action = select_action_heuristic(current_state, method=method, dqn=dqn)
-                    next_state, reward, done, value = take_action(current_state, action)
+                    next_state, reward, done, total_flow, total_probability = take_action(current_state, action, return_all=True)
                     score += reward
                     current_state = next_state
                 except:
                     print('Excepting...')
                     current_state = new_state() 
                 reward_compare_method += [reward]
-                value_compare_method += [value]
+                collision_compare_method += [total_probability]
+                traffic_compare_method += [total_flow]                
             mean = np.round(np.mean(reward_compare_method),2)
             median = np.round(np.median(reward_compare_method),2)
             std = np.round(np.std(reward_compare_method),2)
-            value_compare[method] += [value_compare_method]
+            collision_compare[method] += [collision_compare_method]
+            traffic_compare[method] += [traffic_compare_method]
             reward_compare[method] += [reward_compare_method]
             print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
     for method in methods:
@@ -421,11 +422,15 @@ def test_RL(dqn, num_steps):
         std = np.round(np.std(reward_compare[method]),2)
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
         print(reward_compare[method])
-    plot_rl(methods, reward_compare, filename='reward_rl_comparison.pdf')
-    plot_rl(methods, value_compare, filename='value_rl_comparison.pdf')
+    plot_rl(methods, reward_compare, title='Reward')
+    plot_rl(methods, traffic_compare, title='Traffic')
+    plot_rl(methods, collision_compare, title='Collisions')
+    print('Reward Compare: ', reward_compare)
+    print('Collision Compare: ', collision_compare)
+    print('Traffic Compare: ', traffic_compare)
     return reward_compare
 
-def plot_rl(methods, reward_compare, filename):
+def plot_rl(methods, reward_compare, title):
     linestyles = ['solid', 'dotted', 'dashed', 'dashdot', (0,(1,10)), (0, (1,1)), (5,(10,3))]
     colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
     for i, method in enumerate(methods):
@@ -438,12 +443,13 @@ def plot_rl(methods, reward_compare, filename):
         plt.plot(xs, average, label=method, color=colors[i], linestyle=linestyles[i])
         plt.fill_between(xs, upper_confidence, lower_confidence, color=colors[i], alpha=0.2)
 
-    plt.title('Reward of Heuristics Number of Roads Opened')
-    plt.ylabel('Reward')
+    plt.title(f'{title} by Number of Roads Opened')
+    plt.ylabel(f'{title}')
     plt.xlabel('Number of Streets Opened')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(f'figures/{filename}.pdf')
+    plt.savefig(f'figures/rl_comparison_{title}.pdf')
+    plt.clf()
 
 def plot_q_values(dqn):
     current_state = new_state()

@@ -6,7 +6,6 @@
 #SBATCH --error=./hpc_output/%x_%j.err
 #SBATCH --export=ALL
 #SBATCH --time=6:00:00
-#SBATCH --gres=gpu:a100:1
 #SBATCH --mem=64G
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=rtealwitter@nyu.edu
