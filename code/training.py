@@ -305,7 +305,7 @@ def train_bce_minibatch(
             report_dict = metrics
             torch.save(model.state_dict(), f'saved_models/best_{model_name}.pt')
     if save_model:
-        torch.save(model.state_dict(), f'saved_models/{model_name}.pt')
+        torch.save(model.state_dict(), f'saved_models/{model_name}_{model_id}.pt')
     
     if return_class_report_dict:
         run_id = str(time.time())

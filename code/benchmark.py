@@ -55,9 +55,9 @@ def build_dataloaders(train_years, valid_years, train_months, valid_months, clas
 
 def benchmark(num_epochs=10, seeds=[0,1,2,3,4,5,6,7,8,9]):
     first_time = False
-    train_years = [2013] # , 2014]
-    valid_years = [2013] # , 2014]
-    train_months = ['01', '02'] #, '03', '04', '05', '06', '07', '08', '09', '10', '11']
+    train_years = [2013 , 2014]
+    valid_years = [2013 , 2014]
+    train_months = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11']
     valid_months = ['12']
 
     for year in train_years + valid_years:
@@ -170,6 +170,6 @@ def print_summary_results(results=None, benchmark_launch_time=''):
     print(t)
 
 if __name__ == '__main__':
-    benchmark_launch_time = benchmark(num_epochs=100)
+    benchmark_launch_time = benchmark(num_epochs=50)
     print_summary_results(benchmark_launch_time=benchmark_launch_time)
     

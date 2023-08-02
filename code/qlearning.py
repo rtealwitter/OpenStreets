@@ -363,9 +363,9 @@ def select_traffic_collision(current_state):
     return torch.argmax(output).item()
 
 def select_action_heuristic(current_state, method, dqn=None):
-    if method == 'traffic': return select_traffic(current_state)
+    if method == 'Traffic': return select_traffic(current_state)
     if method == 'Random': return np.random.choice(len(current_state.remaining_links))
-    if method == 'collision': return select_collision(current_state)
+    if method == 'Collision': return select_collision(current_state)
     if method == 'traffic_collision': return select_traffic_collision(current_state)
     if method == 'Q Values': return select_action(current_state, 0, dqn)
     if method == 'Open Streets': return open_street_link(current_state.remaining_links)
@@ -377,7 +377,7 @@ def open_street_link(remaining_links):
     
 
 def test_RL(dqn, num_steps):
-    methods = ['Open Streets', 'Q Values', 'Random']#'traffic_collision', 'collision', 'traffic', 'random']
+    methods = ['Open Streets', 'Q Values', 'Random', 'Collision', 'Traffic']
     scores_compare = {method : [] for method in methods}
     reward_compare = {method : [] for method in methods}
     collision_compare = {method : [] for method in methods}
@@ -392,12 +392,7 @@ def test_RL(dqn, num_steps):
             print(method)
             current_state = new_state()
             done, score = False, 0
-            for _ in range(num_steps):
-                if done:
-                    current_state = new_state()
-                    scores_compare[method] += [score]
-                    print(score)
-                    score = 0
+            while not done:
                 try:
                     action = select_action_heuristic(current_state, method=method, dqn=dqn)
                     next_state, reward, done, total_flow, total_probability = take_action(current_state, action, return_all=True)
@@ -412,9 +407,10 @@ def test_RL(dqn, num_steps):
             mean = np.round(np.mean(reward_compare_method),2)
             median = np.round(np.median(reward_compare_method),2)
             std = np.round(np.std(reward_compare_method),2)
-            collision_compare[method] += [collision_compare_method]
-            traffic_compare[method] += [traffic_compare_method]
-            reward_compare[method] += [reward_compare_method]
+            scores_compare[method] += [score]
+            collision_compare[method] += [np.sum(collision_compare_method)]
+            traffic_compare[method] += [np.sum(traffic_compare_method)]
+            reward_compare[method] += [np.sum(reward_compare_method)]
             print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
     for method in methods:
         mean = np.round(np.mean(reward_compare[method]),2)
@@ -422,15 +418,25 @@ def test_RL(dqn, num_steps):
         std = np.round(np.std(reward_compare[method]),2)
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
         print(reward_compare[method])
-    plot_rl(methods, reward_compare, title='Reward')
-    plot_rl(methods, traffic_compare, title='Traffic')
-    plot_rl(methods, collision_compare, title='Collisions')
+    plot_rl_boxplot(methods, scores_compare, 'Scores')
+    plot_rl_boxplot(methods, collision_compare, 'Collisions')
+    plot_rl_boxplot(methods, traffic_compare, 'Traffic')
+    plot_rl_boxplot(methods, reward_compare, 'Reward')
     print('Reward Compare: ', reward_compare)
     print('Collision Compare: ', collision_compare)
     print('Traffic Compare: ', traffic_compare)
     return reward_compare
 
-def plot_rl(methods, reward_compare, title):
+def plot_rl_boxplot(methods, compare, title):
+    data = np.array([compare[method] for method in methods]).T
+    plt.boxplot(data, showfliers=False, labels=methods, medianprops=dict(color='black'))
+    plt.title(f'{title} by Heuristics')
+    plt.ylabel(f'{title}')
+    plt.tight_layout()
+    plt.savefig(f'figures/rl_comparison_boxplot_{title}.pdf')
+    plt.clf()
+
+def plot_rl_by_roads(methods, reward_compare, title):
     linestyles = ['solid', 'dotted', 'dashed', 'dashdot', (0,(1,10)), (0, (1,1)), (5,(10,3))]
     colors = ['#377eb8', '#ff7f00', '#4daf4a', '#f781bf', '#a65628', '#984ea3', '#999999', '#e41a1c', '#dede00']
     for i, method in enumerate(methods):
