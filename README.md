@@ -1,7 +1,3 @@
-## Purpose
-
-This is the repository accompanying the paper titled "Recurrent Graph Neural Networks and Deep Q Learning for Reducing Traffic and Collisions in Road Networks."
-
 ### Code
 
 All code for the paper appears in the `code` folder.
