@@ -118,8 +118,8 @@ class Static:
     
     # LUCAS
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[256,128,64,32,32]).to(device)
-    model.load_state_dict(torch.load('saved_models/best_scalable_rgnn_256.pt', map_location=device))
+    model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[1024,512,768,256,128,64,64]).to(device)
+    model.load_state_dict(torch.load('saved_models/best_scalable_rgnn.pt', map_location=device))
     model.eval()
     for p in model.parameters(): p.requires_grad = False
 
@@ -292,8 +292,8 @@ def train_qlearning(num_steps, save_model=True, time_steps=False):
     memory = ReplayBuffer(max_size = 1000) 
 
     # LUCAS
-    dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(device)
-    dqn_target = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(device)
+    dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[512, 256, 64]).to(device)
+    dqn_target = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[512, 256, 64]).to(device)
     dqn_target.load_state_dict(dqn.state_dict())
     print(f'Number of parameters: {sum([p.numel() for p in dqn.parameters()])}')
 
@@ -377,7 +377,7 @@ def open_street_link(remaining_links):
     
 
 def test_RL(dqn, num_steps):
-    methods = ['Open Streets', 'Q Values', 'Random', 'Collision', 'Traffic']
+    methods = ['Open Streets', 'Q Values', 'Random']#, 'Collision', 'Traffic']
     scores_compare = {method : [] for method in methods}
     reward_compare = {method : [] for method in methods}
     collision_compare = {method : [] for method in methods}
@@ -418,10 +418,7 @@ def test_RL(dqn, num_steps):
         std = np.round(np.std(reward_compare[method]),2)
         print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
         print(reward_compare[method])
-    plot_rl_boxplot(methods, scores_compare, 'Scores')
-    plot_rl_boxplot(methods, collision_compare, 'Collisions')
-    plot_rl_boxplot(methods, traffic_compare, 'Traffic')
-    plot_rl_boxplot(methods, reward_compare, 'Reward')
+    plot_rl_boxplot(methods, reward_compare, 'Improvement in Traffic Congestion and Safety')
     print('Reward Compare: ', reward_compare)
     print('Collision Compare: ', collision_compare)
     print('Traffic Compare: ', traffic_compare)
@@ -433,7 +430,7 @@ def plot_rl_boxplot(methods, compare, title):
     plt.title(f'{title} by Heuristics')
     plt.ylabel(f'{title}')
     plt.tight_layout()
-    plt.savefig(f'figures/rl_comparison_boxplot_{title}.pdf')
+    plt.savefig(f'figures/rl_comparison_boxplot_improvement.pdf')
     plt.clf()
 
 def plot_rl_by_roads(methods, reward_compare, title):
@@ -459,7 +456,7 @@ def plot_rl_by_roads(methods, reward_compare, title):
 
 def plot_q_values(dqn):
     current_state = new_state()
-    q_values = dqn(current_state.node_features, current_state.edges).detach().squeeze().numpy()
+    q_values = dqn(current_state.node_features, current_state.edges).detach().cpu().squeeze().numpy()
     q_values = (q_values-q_values.mean())/q_values.std()
     print(q_values.max())
     print(q_values.min())
@@ -477,13 +474,13 @@ def plot_q_values(dqn):
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
 
 
-#dqn = train_qlearning(num_steps=1000, save_model=True, time_steps=True)
+#dqn = train_qlearning(num_steps=20000, save_model=True, time_steps=True)
 # LUCAS
-dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
+dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[512, 256, 64]).to(Static.device)
 dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
-#plot_q_values(dqn)
+plot_q_values(dqn)
 test_RL(dqn, num_steps=30)
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
