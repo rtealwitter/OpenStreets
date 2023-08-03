@@ -170,11 +170,13 @@ class State:
     def calculate_value(self):
         # get total flow
         traffic = calculate_traffic(self.remaining_links, self.flows_day)
-        total_flow = sum(traffic) / 2335000 * 1000 # normalize from random day
+#        print('traffic sum:', sum(traffic))
+        total_flow = sum(traffic) / 2032838 * 1000 # normalize from random day
         # get total probability of collision
         output = Static.model(self.node_features, self.edges).squeeze()
         total_probability = F.softmax(output, dim=1)[:,1].sum().item() # probability of removing link
-        total_probability = total_probability / 9654 * 1000 # normalize from random day
+#        print('total probability:', total_probability)
+        total_probability = total_probability / 7640 * 1000 # normalize from random day
         print('traffic', total_flow)
         print('probability', total_probability)
         return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability, total_flow, total_probability
@@ -292,8 +294,8 @@ def train_qlearning(num_steps, save_model=True, time_steps=False):
     memory = ReplayBuffer(max_size = 1000) 
 
     # LUCAS
-    dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[512, 256, 64]).to(device)
-    dqn_target = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[512, 256, 64]).to(device)
+    dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(device)
+    dqn_target = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(device)
     dqn_target.load_state_dict(dqn.state_dict())
     print(f'Number of parameters: {sum([p.numel() for p in dqn.parameters()])}')
 
@@ -321,8 +323,8 @@ def train_qlearning(num_steps, save_model=True, time_steps=False):
 
         if len(memory) > batch_size and i % update == 0:
             batch = memory.sample(batch_size)
-            loss = calculate_loss(batch, dqn, dqn_target, gamma, device) # calculate loss and update weights
             optimizer.zero_grad()
+            loss = calculate_loss(batch, dqn, dqn_target, gamma, device) # calculate loss and update weights
             loss.backward()
             torch.nn.utils.clip_grad_norm_(dqn.parameters(), 1)
             optimizer.step()
@@ -408,9 +410,9 @@ def test_RL(dqn, num_steps):
             median = np.round(np.median(reward_compare_method),2)
             std = np.round(np.std(reward_compare_method),2)
             scores_compare[method] += [score]
-            collision_compare[method] += [np.sum(collision_compare_method)]
-            traffic_compare[method] += [np.sum(traffic_compare_method)]
-            reward_compare[method] += [np.sum(reward_compare_method)]
+            collision_compare[method] += [np.mean(collision_compare_method)]
+            traffic_compare[method] += [np.mean(traffic_compare_method)]
+            reward_compare[method] += [np.mean(reward_compare_method)]
             print(f'Method: {method}, Median: {median}, Mean: {mean}, Std: {std}')
     for method in methods:
         mean = np.round(np.mean(reward_compare[method]),2)
@@ -472,11 +474,12 @@ def plot_q_values(dqn):
     plt.title(f'Q Values in Manhattan on {current_state.day}')
     plt.axis('off')
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
+    plt.clf()
 
 
-#dqn = train_qlearning(num_steps=20000, save_model=True, time_steps=True)
+dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
-dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[512, 256, 64]).to(Static.device)
+dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
 dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False

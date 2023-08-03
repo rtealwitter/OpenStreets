@@ -5,7 +5,7 @@
 #SBATCH --output=./hpc_output/%x_%j.out
 #SBATCH --error=./hpc_output/%x_%j.err
 #SBATCH --export=ALL
-#SBATCH --time=06:00:00
+#SBATCH --time=02:00:00
 #SBATCH --gres=gpu:a100:1
 #SBATCH --mem=64G
 #SBATCH --mail-type=ALL
