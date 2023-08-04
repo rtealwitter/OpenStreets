@@ -472,8 +472,8 @@ def plot_q_values(dqn):
     print('Top 100 Links in Q Value:')
     print(link_ids)
     new_links = Static.links.copy(deep=True)[Static.links['OBJECTID'].isin(current_state.remaining_links)]
-    new_links.plot(column = q_values, cmap = 'viridis', figsize = (10,10), legend = True)
-    plt.title(f'Q Values in Manhattan on {current_state.day}')
+    new_links.plot(column = q_values, cmap = 'viridis', figsize = (10,10), legend = False)
+    #plt.title(f'Q-values in Manhattan on {current_state.day}')
     plt.axis('off')
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
     plt.clf()
@@ -503,8 +503,8 @@ def plot_streets(dqn):
 
     print(new_links['colors'].value_counts())
 
-    new_links.plot(color = new_links['colors'])
-    plt.title(f'Manhattan on {current_state.day}')
+    new_links.plot(color = new_links['colors'], figsize = (10,10))
+    #plt.title(f'Open Streets (Red) and Highest Q-values (Blue) in Manhattan on {current_state.day}')
     plt.axis('off')
     plt.savefig('figures/streets.pdf', format="pdf", bbox_inches="tight")
     plt.clf()
@@ -512,7 +512,7 @@ def plot_streets(dqn):
 #dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
 dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
-dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
+dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
 print('Plot streets:')
