@@ -501,7 +501,7 @@ def plot_streets(dqn):
 
     print(new_links['colors'].value_counts())
 
-    new_links.plot(column = new_links['colors'])
+    new_links.plot(color = new_links['colors'])
     plt.title(f'Manhattan on {current_state.day}')
     plt.axis('off')
     plt.savefig('figures/streets.pdf', format="pdf", bbox_inches="tight")
@@ -513,8 +513,14 @@ dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Sta
 dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
+print('Plot streets:')
 plot_streets(dqn)
+print('Done!')
+print()
+print('Plot q values:')
 plot_q_values(dqn)
+print('Done!')
+print()
 #test_RL(dqn, num_steps=30)
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
