@@ -111,10 +111,12 @@ class Static:
         if link_to_capacity[link] == None: link_to_capacity[link] = 1
         elif math.isnan(float(link_to_capacity[link])): link_to_capacity[link] = 1
         else: link_to_capacity[link] = int(link_to_capacity[link])
-    
-    with open('data/os_id_to_index.pkl', 'rb') as fp:
-        osid_to_index = pickle.load(fp)
-    osid_indices = list(osid_to_index.values())
+
+    openstreets = gpd.read_file('data/Open_Streets_Locations.csv')
+
+    mask = np.isin(links['SegmentID'], openstreets['segmentidt'])
+
+    osid_indices = list(links[mask]['OBJECTID'])
     
     # LUCAS
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -373,9 +375,12 @@ def select_action_heuristic(current_state, method, dqn=None):
     if method == 'Open Streets': return open_street_link(current_state.remaining_links)
 
 def open_street_link(remaining_links):
-    #osid_remaining = [x for x in Static.osid_indices if x in remaining_links]
+    candidates = []
+    for i in range(len(remaining_links)):
+        if remaining_links[i] in Static.osid_indices:
+            candidates += [i]
     
-    return np.random.choice(Static.osid_indices)
+    return np.random.choice(candidates)
     
 
 def test_RL(dqn, num_steps):
@@ -462,7 +467,7 @@ def plot_q_values(dqn):
     q_values = (q_values-q_values.mean())/q_values.std()
     print(q_values.max())
     print(q_values.min())
-    indices = np.argsort(q_values)[:100]
+    indices = np.argsort(-q_values)[:100]
     link_ids = np.array(current_state.remaining_links)[indices]
     print('Top 100 Links in Q Value:')
     print(link_ids)
@@ -481,23 +486,20 @@ def plot_streets(dqn):
     num_top = len(osid_indices)
     print(q_values.max())
     print(q_values.min())
-    indices = np.argsort(q_values)[:num_top]
+
+    indices = np.argsort(-q_values)[:num_top]
     link_ids = np.array(current_state.remaining_links)[indices]
-    print(f'Top {num_top} indices in Q Value:')
+    print(f'Top {num_top} link_ids in Q Value:')
     print(indices)
     print(f'{num_top} Open Streets indices')
     print(osid_indices)
     new_links = Static.links.copy(deep=True)[Static.links['OBJECTID'].isin(current_state.remaining_links)]
     
-    new_links['colors'] = '#f0f0f0'
-
-    print(new_links.index)
+    new_links['colors'] = '#CFE6F3'
     
-    print('len new_links.index.isin(indicesl):', np.sum(new_links.index.isin(indices)))
-    new_links.loc[new_links.index.isin(indices), 'colors'] = '#984ea3'
+    new_links.loc[new_links['OBJECTID'].isin(link_ids), 'colors'] = 'blue'
 
-    print('len(new_links.index.isin(Static.osid_indices)', np.sum(new_links.index.isin(osid_indices)))
-    new_links.loc[new_links.index.isin(osid_indices), 'colors'] = '#377eb8'
+    new_links.loc[new_links['OBJECTID'].isin(osid_indices), 'colors'] = 'red'
 
     print(new_links['colors'].value_counts())
 
