@@ -112,7 +112,7 @@ class Static:
         elif math.isnan(float(link_to_capacity[link])): link_to_capacity[link] = 1
         else: link_to_capacity[link] = int(link_to_capacity[link])
     
-    with open('data/objectid_to_index.pkl', 'rb') as fp:
+    with open('data/os_id_to_index.pkl', 'rb') as fp:
         osid_to_index = pickle.load(fp)
     osid_indices = list(osid_to_index.values())
     
@@ -467,24 +467,55 @@ def plot_q_values(dqn):
     print('Top 100 Links in Q Value:')
     print(link_ids)
     new_links = Static.links.copy(deep=True)[Static.links['OBJECTID'].isin(current_state.remaining_links)]
-    new_links.set_index('OBJECTID', inplace=True)
-    new_links.sort_index(inplace=True)
-    new_links['q_values'] = q_values
     new_links.plot(column = q_values, cmap = 'viridis', figsize = (10,10), legend = True)
     plt.title(f'Q Values in Manhattan on {current_state.day}')
     plt.axis('off')
     plt.savefig('figures/q_values.pdf', format="pdf", bbox_inches="tight")
     plt.clf()
 
+def plot_streets(dqn):
+    current_state = new_state()
+    q_values = dqn(current_state.node_features, current_state.edges).detach().cpu().squeeze().numpy()
+    q_values = (q_values-q_values.mean())/q_values.std()
+    osid_indices = Static.osid_indices
+    num_top = len(osid_indices)
+    print(q_values.max())
+    print(q_values.min())
+    indices = np.argsort(q_values)[:num_top]
+    link_ids = np.array(current_state.remaining_links)[indices]
+    print(f'Top {num_top} indices in Q Value:')
+    print(indices)
+    print(f'{num_top} Open Streets indices')
+    print(osid_indices)
+    new_links = Static.links.copy(deep=True)[Static.links['OBJECTID'].isin(current_state.remaining_links)]
+    
+    new_links['colors'] = '#f0f0f0'
 
-dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
+    print(new_links.index)
+    
+    print('len new_links.index.isin(indicesl):', np.sum(new_links.index.isin(indices)))
+    new_links.loc[new_links.index.isin(indices), 'colors'] = '#984ea3'
+
+    print('len(new_links.index.isin(Static.osid_indices)', np.sum(new_links.index.isin(osid_indices)))
+    new_links.loc[new_links.index.isin(osid_indices), 'colors'] = '#377eb8'
+
+    print(new_links['colors'].value_counts())
+
+    new_links.plot(column = new_links['colors'])
+    plt.title(f'Manhattan on {current_state.day}')
+    plt.axis('off')
+    plt.savefig('figures/streets.pdf', format="pdf", bbox_inches="tight")
+    plt.clf()
+
+#dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
 dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
 dqn.load_state_dict(torch.load('saved_models/dqn.pt'))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
+plot_streets(dqn)
 plot_q_values(dqn)
-test_RL(dqn, num_steps=30)
+#test_RL(dqn, num_steps=30)
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
 ## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33
