@@ -2,6 +2,7 @@ import data
 import models
 from itertools import islice
 import matplotlib.colors as colors
+from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.pyplot as plt
 import time
 import networkx as nx
@@ -495,19 +496,63 @@ def plot_streets(dqn):
     print(osid_indices)
     new_links = Static.links.copy(deep=True)[Static.links['OBJECTID'].isin(current_state.remaining_links)]
     
-    new_links['colors'] = '#CFE6F3'
-    
-    new_links.loc[new_links['OBJECTID'].isin(link_ids), 'colors'] = 'blue'
+    default_color = '#CFE6F3'
+    open_street_color = 'red'
+    q_val_color = 'blue'
 
-    new_links.loc[new_links['OBJECTID'].isin(osid_indices), 'colors'] = 'red'
+    new_links['colors'] = default_color
+    
+    new_links.loc[new_links['OBJECTID'].isin(link_ids), 'colors'] = q_val_color
+
+    new_links.loc[new_links['OBJECTID'].isin(osid_indices), 'colors'] = open_street_color
 
     print(new_links['colors'].value_counts())
 
+    new_links.to_file('new_links.shp')
     new_links.plot(color = new_links['colors'])
     plt.title(f'Manhattan on {current_state.day}')
     plt.axis('off')
     plt.savefig('figures/streets.pdf', format="pdf", bbox_inches="tight")
     plt.clf()
+    
+    # NOTE: The following code may break depending on your pandas version
+    # (!) make sure you run `pip install --upgrade pandas=1.5.2` before running this!
+    if pd.__version__ == '1.5.2':
+        ## Adding manhattan agreement level plot at neighborhood level
+        neighborhoods_file_path = 'data/ntas.shp'
+        neighborhoods = gpd.read_file(neighborhoods_file_path)
+        manhattan_neighborhoods = neighborhoods[neighborhoods['boro_name'] == 'Manhattan']
+        new_links.loc[new_links['colors'] == default_color, 'street_type'] = 0
+        new_links.loc[new_links['colors'] == open_street_color, 'street_type'] = 1
+        new_links.loc[new_links['colors'] == q_val_color, 'street_type'] = 2
+        manhattan_neighborhoods = manhattan_neighborhoods.to_crs(new_links.crs)
+        # joined_data = gpd.sjoin(new_links, manhattan_neighborhoods, how='inner', op='intersects')
+        joined_data = gpd.sjoin(new_links, manhattan_neighborhoods, how='inner', predicate='intersects')
+
+        # group by the neighborhood and count the segments in each
+        segment_counts = joined_data.groupby('ntaname').size()
+        # reset the index to make this a df
+        segment_counts = segment_counts.reset_index(name='count')
+
+        tag_counts = joined_data.groupby(['ntaname', 'street_type']).size().reset_index(name='count')
+        filtered_data = tag_counts[tag_counts['street_type'] != 0]
+        tag_counts = filtered_data.groupby(['ntaname', 'street_type']).sum().unstack(fill_value=0)
+        
+        # actually calculate the agreement 
+        # TODO: improve this agreement metric to be directional in (-1, 1)
+        tag_counts['agreement'] = 1 - abs(tag_counts['count', 1] - tag_counts['count', 2]) / (tag_counts['count', 1] + tag_counts['count', 2])
+        tag_counts['agreement'].fillna(0, inplace=True)
+
+        # create data for plotting
+        plot_data = manhattan_neighborhoods.merge(tag_counts, on='ntaname', how='left')
+        plot_data.rename(columns={('agreement', ''): 'agreement'}, inplace=True)
+        custom_cmap = LinearSegmentedColormap.from_list('grey_to_blue', ['white', 'green'], N=256)
+
+        # plt.figure(figsize=(15, 10))
+        ax = plot_data.plot(column='agreement', cmap=custom_cmap, linewidth=0.5, edgecolor='black')
+        ax.set_title('Agreement Level in Manhattan Neighborhoods')
+        plt.axis('off')
+        plt.savefig('figures/agreement.pdf', format="pdf", bbox_inches="tight")
 
 #dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
