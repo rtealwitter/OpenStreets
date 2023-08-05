@@ -430,14 +430,16 @@ def test_RL(dqn, num_steps):
     print('Reward Compare: ', reward_compare)
     print('Collision Compare: ', collision_compare)
     print('Traffic Compare: ', traffic_compare)
+    with open('data/rl_reward.json', 'w') as fp:
+        json.dump(reward_compare, fp)
     return reward_compare
 
 def plot_rl_boxplot(methods, compare, title):
+    plt.figure(figsize=(8,4))
     data = np.array([compare[method] for method in methods]).T
     plt.boxplot(data, showfliers=False, labels=methods, medianprops=dict(color='black'))
     plt.title(f'{title} by Heuristics')
     plt.ylabel(f'{title}')
-    plt.tight_layout()
     plt.savefig(f'figures/rl_comparison_boxplot_improvement.pdf')
     plt.clf()
 
@@ -560,15 +562,17 @@ dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Sta
 dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
 dqn.eval()
 for param in dqn.parameters(): param.requires_grad = False
-print('Plot streets:')
 plot_streets(dqn)
-print('Done!')
-print()
-print('Plot q values:')
 plot_q_values(dqn)
-print('Done!')
-print()
-#test_RL(dqn, num_steps=30)
+
+test_RL(dqn, num_steps=30)
+
+# Make boxplot
+with open('data/rl_reward.json', 'r') as f:
+    reward_compare = json.load(f)
+plot_rl_boxplot(['Q Values', 'Random'], reward_compare, 'Improvement in Traffic Congestion and Safety')
+
+
 ## Output
 ## Method: qlearning, Median: 1.02, Mean: 1.01, Std: 0.07
 ## Method: traffic_collision, Median: -20.21, Mean: -11.87, Std: 18.33
