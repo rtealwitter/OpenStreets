@@ -48,7 +48,7 @@ def modified_model(X):
 # Use captum to compute the attributions
 ig = IntegratedGradients(modified_model)
 attr = ig.attribute(X, target=y.flatten(), n_steps=1)
-attr = attr.detach().cpu().numpy().sum(axis=1)
+attr = attr.detach().cpu().numpy().mean(axis=1)
 attributes = list(attr[0])
 
 # Sort by importance
@@ -74,6 +74,8 @@ attribution_cleaned = {
 
 # Plot the attributions
 def visualize_importances(feature_names, importances, title="Average Feature Importances for Predicting Collisions"):
+    # Make font larger
+    plt.rcParams.update({'font.size': 16})
     print(title)
     for i in range(len(feature_names)):
         print(feature_names[i], ": ", '%.3f'%(importances[i]))
@@ -84,7 +86,8 @@ def visualize_importances(feature_names, importances, title="Average Feature Imp
     plt.xticks(x_pos, feature_names, rotation=30)
     plt.ylabel('(Directed) Importance')
     plt.title(title)
-    plt.savefig('/figures/feature_importances.pdf', bbox_inches='tight')
+    plt.tight_layout()
+    plt.savefig('figures/feature_importances.pdf')
 
 visualize_importances(
     list(attribution_cleaned.keys()), list(attribution_cleaned.values())
