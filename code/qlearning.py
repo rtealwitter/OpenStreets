@@ -17,6 +17,8 @@ import momepy
 import math
 import json
 
+from xgboost import XGBClassifier    
+
 # Helper functions for the state
 def k_shortest_paths(graph, source, target, k):
     return list(
@@ -121,10 +123,13 @@ class Static:
     
     # LUCAS
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[1024,512,768,256,128,64,64]).to(device)
-    model.load_state_dict(torch.load('saved_models/best_scalable_rgnn.pt', map_location=device))
-    model.eval()
-    for p in model.parameters(): p.requires_grad = False
+    bst = XGBClassifier(n_estimators=20, max_depth=6, learning_rate=0.3, objective='binary:logistic')
+    bst.load_model('saved_models/xgb.json')
+
+    #model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[1024,512,768,256,128,64,64]).to(device)
+    #model.load_state_dict(torch.load('saved_models/best_scalable_rgnn.pt', map_location=device))
+    #model.eval()
+    #for p in model.parameters(): p.requires_grad = False
 
 class State:
     def __init__(self, day, removed_links, remaining_links, flows_month, tradeoff=.5):
@@ -556,7 +561,7 @@ def plot_streets(dqn):
         plt.axis('off')
         plt.savefig('figures/agreement.pdf', format="pdf", bbox_inches="tight")
 
-#dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
+dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
 dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
 dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
