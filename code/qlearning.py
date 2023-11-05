@@ -131,6 +131,14 @@ class Static:
     #model.eval()
     #for p in model.parameters(): p.requires_grad = False
 
+def get_probabilities(node_features, edges):
+    if hasattr(Static, 'model'):
+        output = Static.model(node_features, edges).squeeze()
+        return F.softmax(output, dim=1)[:,1]
+    if hasattr(Static, 'bst'):
+        features = node_features.squeeze().cpu().numpy()
+        return Static.bst.predict_proba(features)[:,1]
+
 class State:
     def __init__(self, day, removed_links, remaining_links, flows_month, tradeoff=.5):
         self.tradeoff = tradeoff
@@ -179,16 +187,17 @@ class State:
         # get total flow
         traffic = calculate_traffic(self.remaining_links, self.flows_day)
 #        print('traffic sum:', sum(traffic))
-        total_flow = sum(traffic) / 2032838 * 1000 # normalize from random day
+        total_flow = sum(traffic) / 1754308 * 1000 # normalize from random day
         # get total probability of collision
-        output = Static.model(self.node_features, self.edges).squeeze()
-        total_probability = F.softmax(output, dim=1)[:,1].sum().item() # probability of removing link
-#        print('total probability:', total_probability)
-        total_probability = total_probability / 7640 * 1000 # normalize from random day
+        probabilities = get_probabilities(self.node_features, self.edges)
+        if hasattr(Static, 'model'):
+            total_probability = probabilities.sum().item() / 7000 * 1000 # normalize from random day
+        elif hasattr(Static, 'bst'):
+            total_probability = probabilities.sum() / 6653 * 1000 # normalize from random day
         print('traffic', total_flow)
         print('probability', total_probability)
         return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability, total_flow, total_probability
-
+    
 class ReplayBuffer:
     def __init__(self, max_size):
         self.max_size = max_size
@@ -362,13 +371,13 @@ def select_traffic(current_state):
     return max(enumerate(traffic), key=lambda x: x[1])[0]
 
 def select_collision(current_state):
-    probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
+    probabilities = get_probabilities(current_state.node_features, current_state.edges)
     return torch.argmax(probabilities).item()
 
 def select_traffic_collision(current_state):
     tradeoff = current_state.tradeoff
     traffic = calculate_traffic(current_state.remaining_links, current_state.flows_day)
-    probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
+    probabilities = get_probabilities(current_state.node_features, current_state.edges)
     output = torch.tensor(traffic).to(Static.device) * (1-tradeoff) + probabilities * tradeoff
     return torch.argmax(output).item()
 
@@ -561,7 +570,7 @@ def plot_streets(dqn):
         plt.axis('off')
         plt.savefig('figures/agreement.pdf', format="pdf", bbox_inches="tight")
 
-dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
+#dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
 dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
 dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
