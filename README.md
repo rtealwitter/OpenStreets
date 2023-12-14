@@ -1,3 +1,7 @@
+# I Open at the Close: A Deep Reinforcement Learning Evaluation of Open Streets Initiatives
+
+Code, data, and figures for our [paper](https://arxiv.org/abs/2312.07680).
+
 ### Code
 
 All code for the paper appears in the `code` folder.
@@ -16,7 +20,7 @@ Many of our models took substantial resources to train. We generally saved their
 
 ### Figures
 
-We made one (very pretty) figure of Q values in Manhattan according to our deep Q GNN. You should check it out!
+We made one several pretty figures of Q values in Manhattan according to our deep Q GNN. You should check it out! Some of these figures are not up to date with the what we included in the paper.
 
 ### Data Sources
 
@@ -33,3 +37,5 @@ If you have issues installing torch-sparse, torch-scatter and/or pyg-lib, check 
 
 #### Build LightGBM for GPU
 https://stackoverflow.com/questions/60360750/lightgbm-classifier-with-gpu
+
+Please reach out to us if you have any questions! :)
