@@ -17,8 +17,6 @@ import momepy
 import math
 import json
 
-from xgboost import XGBClassifier    
-
 # Helper functions for the state
 def k_shortest_paths(graph, source, target, k):
     return list(
@@ -123,21 +121,10 @@ class Static:
     
     # LUCAS
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    bst = XGBClassifier(n_estimators=20, max_depth=6, learning_rate=0.3, objective='binary:logistic')
-    bst.load_model('saved_models/xgb.json')
-
-    #model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[1024,512,768,256,128,64,64]).to(device)
-    #model.load_state_dict(torch.load('saved_models/best_scalable_rgnn.pt', map_location=device))
-    #model.eval()
-    #for p in model.parameters(): p.requires_grad = False
-
-def get_probabilities(node_features, edges):
-    if hasattr(Static, 'model'):
-        output = Static.model(node_features, edges).squeeze()
-        return F.softmax(output, dim=1)[:,1]
-    if hasattr(Static, 'bst'):
-        features = node_features.squeeze().cpu().numpy()
-        return Static.bst.predict_proba(features)[:,1]
+    model = models.ScalableRecurrentGCN(node_features = 127, hidden_dim_sequence=[1024,512,768,256,128,64,64]).to(device)
+    model.load_state_dict(torch.load('saved_models/best_scalable_rgnn.pt', map_location=device))
+    model.eval()
+    for p in model.parameters(): p.requires_grad = False
 
 class State:
     def __init__(self, day, removed_links, remaining_links, flows_month, tradeoff=.5):
@@ -187,17 +174,16 @@ class State:
         # get total flow
         traffic = calculate_traffic(self.remaining_links, self.flows_day)
 #        print('traffic sum:', sum(traffic))
-        total_flow = sum(traffic) / 1754308 * 1000 # normalize from random day
+        total_flow = sum(traffic) / 2032838 * 1000 # normalize from random day
         # get total probability of collision
-        probabilities = get_probabilities(self.node_features, self.edges)
-        if hasattr(Static, 'model'):
-            total_probability = probabilities.sum().item() / 7000 * 1000 # normalize from random day
-        elif hasattr(Static, 'bst'):
-            total_probability = probabilities.sum() / 6653 * 1000 # normalize from random day
+        output = Static.model(self.node_features, self.edges).squeeze()
+        total_probability = F.softmax(output, dim=1)[:,1].sum().item() # probability of removing link
+#        print('total probability:', total_probability)
+        total_probability = total_probability / 7640 * 1000 # normalize from random day
         print('traffic', total_flow)
         print('probability', total_probability)
         return (1-self.tradeoff) * total_flow + self.tradeoff * total_probability, total_flow, total_probability
-    
+
 class ReplayBuffer:
     def __init__(self, max_size):
         self.max_size = max_size
@@ -371,13 +357,13 @@ def select_traffic(current_state):
     return max(enumerate(traffic), key=lambda x: x[1])[0]
 
 def select_collision(current_state):
-    probabilities = get_probabilities(current_state.node_features, current_state.edges)
+    probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
     return torch.argmax(probabilities).item()
 
 def select_traffic_collision(current_state):
     tradeoff = current_state.tradeoff
     traffic = calculate_traffic(current_state.remaining_links, current_state.flows_day)
-    probabilities = get_probabilities(current_state.node_features, current_state.edges)
+    probabilities = Static.model(current_state.node_features, current_state.edges).squeeze()[:,1]
     output = torch.tensor(traffic).to(Static.device) * (1-tradeoff) + probabilities * tradeoff
     return torch.argmax(output).item()
 
@@ -449,7 +435,7 @@ def test_RL(dqn, num_steps):
     return reward_compare
 
 def plot_rl_boxplot(methods, compare, title):
-    plt.figure(figsize=(8,4))
+    #plt.figure(figsize=(8,4))
     data = np.array([compare[method] for method in methods]).T
     plt.boxplot(data, showfliers=False, labels=methods, medianprops=dict(color='black'))
     plt.title(f'{title} by Heuristics')
@@ -572,19 +558,19 @@ def plot_streets(dqn):
 
 #dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 # LUCAS
-dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
-dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
-dqn.eval()
-for param in dqn.parameters(): param.requires_grad = False
-plot_streets(dqn)
-plot_q_values(dqn)
-
-test_RL(dqn, num_steps=30)
+#dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
+#dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
+#dqn.eval()
+#for param in dqn.parameters(): param.requires_grad = False
+#plot_streets(dqn)
+#plot_q_values(dqn)
+#
+#test_RL(dqn, num_steps=30)
 
 # Make boxplot
 with open('data/rl_reward.json', 'r') as f:
     reward_compare = json.load(f)
-plot_rl_boxplot(['Q Values', 'Random'], reward_compare, 'Improvement in Traffic Congestion and Safety')
+plot_rl_boxplot(['Q Values', 'Random', 'Open Streets'], reward_compare, 'Improvement in Traffic Congestion and Safety')
 
 
 ## Output
