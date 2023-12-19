@@ -435,6 +435,8 @@ def test_RL(dqn, num_steps):
     return reward_compare
 
 def plot_rl_boxplot(methods, compare, title):
+    import matplotlib
+    matplotlib.rcParams.update({'font.size': 12})
     #plt.figure(figsize=(8,4))
     data = np.array([compare[method] for method in methods]).T
     plt.boxplot(data, showfliers=False, labels=methods, medianprops=dict(color='black'))
