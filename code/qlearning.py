@@ -558,21 +558,29 @@ def plot_streets(dqn):
         plt.axis('off')
         plt.savefig('figures/agreement.pdf', format="pdf", bbox_inches="tight")
 
-#dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
-# LUCAS
-#dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
-#dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
-#dqn.eval()
-#for param in dqn.parameters(): param.requires_grad = False
-#plot_streets(dqn)
-#plot_q_values(dqn)
-#
-#test_RL(dqn, num_steps=30)
+train_dqn = False
+## Train DQN
+if train_dqn:
+    dqn = train_qlearning(num_steps=2000, save_model=True, time_steps=True)
 
-# Make boxplot
-with open('data/rl_reward.json', 'r') as f:
-    reward_compare = json.load(f)
-plot_rl_boxplot(['Q Values', 'Random', 'Open Streets'], reward_compare, 'Improvement in Traffic Congestion and Safety')
+## Test DQN
+test_dqn = False
+if test_dqn:
+    dqn = models.ConvGraphNet(input_dim = 127, hidden_dim_sequence=[256, 64]).to(Static.device)
+    dqn.load_state_dict(torch.load('saved_models/dqn.pt', map_location=Static.device))
+    dqn.eval()
+    for param in dqn.parameters(): param.requires_grad = False
+    plot_streets(dqn)
+    plot_q_values(dqn)
+
+    test_RL(dqn, num_steps=30)
+
+# Plot comparison
+plot_comparison = True
+if plot_comparison:
+    with open('data/rl_reward.json', 'r') as f:
+        reward_compare = json.load(f)
+    plot_rl_boxplot(['Q Values', 'Random', 'Open Streets'], reward_compare, 'Improvement in Traffic Congestion and Safety')
 
 
 ## Output
